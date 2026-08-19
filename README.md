@@ -1,26 +1,31 @@
-# GHL Course Video Downloader v1.3.3
+# GHL Course Video Downloader v1.4.0
 
 Chrome Manifest V3 extension for downloading GoHighLevel course lesson videos.
 
-## v1.3.3 navigation fix
+## v1.4.0 reliability upgrade
 
-- Automatic mode no longer uses `location.assign()` to jump to collected lesson URLs.
-- It stays inside the GHL course/lesson player and clicks the lesson controls that GHL rendered on the page.
-- After a download, it first clicks the next numbered lesson in the lesson list.
-- If needed, it falls back to GHL's visible **Next Lesson / Continue** control.
-- At the end of a section, it clicks **Next Category / Next Module / Next Section** and continues from the first lesson there.
-- Dashboard, Home, Courses, Products, Memberships, and other top-level links are explicitly rejected as batch navigation targets.
-- Lesson changes are detected from GHL's active/selected lesson state, so SPA navigation can continue without reloading the whole site.
-- Automatic muted playback, stream detection/retry, original TS/HLS segment downloading, and live download percentage remain enabled.
+- Rebuilt automatic navigation around the actual GHL curriculum/sidebar DOM instead of guessing or assigning URLs.
+- Never uses `location.assign()` to jump to a guessed lesson URL.
+- Detects the curriculum container with the highest concentration of numbered lesson controls.
+- Clicks the next real lesson row and verifies that the lesson/player actually changed before continuing.
+- Uses explicit **Next Lesson / Continue** and **Next Category / Module / Section** controls only as fallbacks.
+- Blocks dashboard/home/course-root destinations from automatic navigation.
+- If GHL unexpectedly lands on a dashboard during an active batch, the extension recovers the last known lesson.
+- Tracks completed lessons by normalized lesson title, avoiding SPA URL duplication problems.
+- Automatically plays videos muted and waits up to 30 seconds for the real HLS/direct stream.
+- Retries failed stream detection twice before skipping a lesson.
+- Clears media candidates between lessons to avoid downloading the previous lesson again.
+- Shows live download percentage plus how many lessons are currently detected in the visible course section.
+- Keeps the proven original HLS segment-joining method for TS-based GHL lessons.
 
 ## Install
 
 1. Extract the ZIP.
 2. Open `chrome://extensions`.
-3. Remove or disable the older version.
+3. Remove/disable older versions of this extension.
 4. Enable **Developer mode**.
-5. Click **Load unpacked** and select the v1.3.3 folder.
+5. Click **Load unpacked** and select this folder.
 6. Refresh the GHL lesson page.
 7. Open the first lesson and click **Download All Course Videos**.
 
-The automatic downloader should remain within the course player and move lesson → lesson → category rather than sending the browser to the dashboard.
+Chrome may ask whether to allow multiple downloads. Choose **Allow**.

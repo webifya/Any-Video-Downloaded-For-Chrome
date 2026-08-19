@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GHL Course Video Downloader",
-  "version": "1.4.0",
-  "description": "Downloads GHL course lesson videos with reliable automatic lesson/category navigation and progress tracking.",
+  "version": "1.4.1",
+  "description": "Downloads GHL course lesson videos with reliable forward-only automatic lesson/category navigation and progress tracking.",
   "permissions": [
     "downloads",
     "offscreen",
@@ -24,7 +24,8 @@
         "https://app.gohighlevel.com/*"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "forward-only.js"
       ],
       "css": [
         "content.css"
@@ -38,8 +39,7 @@
         "page-probe.js"
       ],
       "matches": [
-        "<all_urls>"
-      ]
+        "<all_urls>"]
     }
   ],
   "sandbox": {

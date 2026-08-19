@@ -1,24 +1,26 @@
-# GHL Course Video Downloader v1.3.2
+# GHL Course Video Downloader v1.3.3
 
 Chrome Manifest V3 extension for downloading GoHighLevel course lesson videos.
 
-## v1.3.2 fixes
+## v1.3.3 navigation fix
 
-- Buttons resolve the current GHL video player after SPA re-renders.
-- Automatically plays the lesson muted when the real media stream is not visible yet.
-- Waits up to 22 seconds for a real HLS/direct video request.
-- Uses a small seek after metadata loads to force the player to request the actual stream when needed.
-- Clears previous-lesson media candidates before each automatic lesson download.
-- Retries a failed lesson once before moving on.
-- Keeps automatic lesson/category navigation and live download percentage.
-- Keeps the v1.2.2 original-segment download method for TS-based HLS lessons.
+- Automatic mode no longer uses `location.assign()` to jump to collected lesson URLs.
+- It stays inside the GHL course/lesson player and clicks the lesson controls that GHL rendered on the page.
+- After a download, it first clicks the next numbered lesson in the lesson list.
+- If needed, it falls back to GHL's visible **Next Lesson / Continue** control.
+- At the end of a section, it clicks **Next Category / Next Module / Next Section** and continues from the first lesson there.
+- Dashboard, Home, Courses, Products, Memberships, and other top-level links are explicitly rejected as batch navigation targets.
+- Lesson changes are detected from GHL's active/selected lesson state, so SPA navigation can continue without reloading the whole site.
+- Automatic muted playback, stream detection/retry, original TS/HLS segment downloading, and live download percentage remain enabled.
 
 ## Install
 
-1. Extract this ZIP.
+1. Extract the ZIP.
 2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked** and select this folder.
-5. Refresh the GHL course lesson page.
+3. Remove or disable the older version.
+4. Enable **Developer mode**.
+5. Click **Load unpacked** and select the v1.3.3 folder.
+6. Refresh the GHL lesson page.
+7. Open the first lesson and click **Download All Course Videos**.
 
-For batch downloading, open a lesson with a visible video and click **Download All Course Videos**.
+The automatic downloader should remain within the course player and move lesson → lesson → category rather than sending the browser to the dashboard.

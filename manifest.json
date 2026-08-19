@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GHL Course Video Downloader",
-  "version": "1.3.3",
-  "description": "Downloads GoHighLevel course videos individually or automatically across lessons, with in-player navigation and live progress.",
+  "version": "1.4.0",
+  "description": "Downloads GHL course lesson videos with reliable automatic lesson/category navigation and progress tracking.",
   "permissions": [
     "downloads",
     "offscreen",
@@ -23,19 +23,29 @@
         "https://*.gohighlevel.com/*",
         "https://app.gohighlevel.com/*"
       ],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["page-probe.js"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "page-probe.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "sandbox": {
-    "pages": ["sandbox.html"]
+    "pages": [
+      "sandbox.html"
+    ]
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self';",

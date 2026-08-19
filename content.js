@@ -1,136 +1,248 @@
 (() => {
   if (window.top !== window.self && !document.querySelector('video')) return;
 
-  const COURSE_KEY = 'ghlCourseBatchV132';
+  const COURSE_KEY = 'ghlCourseBatchV133';
   const state = {
-    mediaUrls: new Map(),
-    mountedFor: null,
+    media: new Map(),
+    mountedVideo: null,
     downloading: false,
-    batchStarting: false,
+    batchBusy: false,
     navLock: false,
-    lessonToken: normalizeUrl(location.href)
+    lastLessonSignature: ''
   };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type !== 'DOWNLOAD_PROGRESS') return;
-    const row = document.getElementById('ghl-video-download-progress-row');
-    const bar = document.getElementById('ghl-video-download-progress');
-    const pct = document.getElementById('ghl-video-download-percent');
-    const status = document.getElementById('ghl-video-download-status');
-    if (!row || !bar || !pct) return;
-    row.style.display = 'flex';
-    const percent = Math.max(0, Math.min(100, Number(msg.percent) || 0));
-    bar.value = percent;
-    pct.textContent = `${Math.round(percent)}%`;
-    if (status && msg.text) status.textContent = msg.text;
-  });
+  function text(el) {
+    return (el?.textContent || '').replace(/\s+/g, ' ').trim();
+  }
 
-  function cleanName(name) {
-    return (name || 'GHL Course Video')
+  function cleanName(value) {
+    return (value || 'GHL Course Video')
       .replace(/[\\/:*?"<>|]+/g, '-')
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 180) || 'GHL Course Video';
   }
 
-  function normalizeUrl(url) {
+  function normalizeUrl(value) {
     try {
-      const u = new URL(url, location.href);
+      const u = new URL(value, location.href);
       u.hash = '';
       return u.href;
-    } catch (_) { return url || ''; }
+    } catch (_) {
+      return value || '';
+    }
+  }
+
+  function isHls(url) {
+    return /\.m3u8(?:$|[?#])/i.test(url || '') || /(?:m3u8|playlist|manifest)/i.test(url || '');
+  }
+
+  function isDirectVideo(url) {
+    return /\.(?:mp4|m4v|webm|mov)(?:$|[?#])/i.test(url || '');
   }
 
   function remember(url, source = 'page') {
     if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
-    state.mediaUrls.set(url, { url, source, seenAt: Date.now() });
+    if (!isHls(url) && !isDirectVideo(url)) return;
+    state.media.set(url, { url, source, seenAt: Date.now() });
   }
 
   function clearLocalMedia() {
-    state.mediaUrls.clear();
-    try {
-      performance.getEntriesByType('resource').forEach(entry => {
-        const u = entry.name || '';
-        if (isHls(u) || isDirectVideo(u)) remember(u, 'performance');
-      });
-    } catch (_) {}
+    state.media.clear();
   }
 
   async function clearWorkerMedia() {
-    try { await chrome.runtime.sendMessage({ type: 'CLEAR_MEDIA_CANDIDATES' }); } catch (_) {}
+    try {
+      await chrome.runtime.sendMessage({ type: 'CLEAR_MEDIA_CANDIDATES' });
+    } catch (_) {}
+  }
+
+  async function resetMediaDetection() {
+    clearLocalMedia();
+    await clearWorkerMedia();
   }
 
   function injectProbe() {
     if (document.documentElement.dataset.ghlDownloaderProbe) return;
     document.documentElement.dataset.ghlDownloaderProbe = '1';
-    const s = document.createElement('script');
-    s.src = chrome.runtime.getURL('page-probe.js');
-    s.onload = () => s.remove();
-    (document.head || document.documentElement).appendChild(s);
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('page-probe.js');
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
   }
 
-  window.addEventListener('message', (event) => {
+  window.addEventListener('message', event => {
     if (event.source !== window) return;
     if (event.data?.source !== 'GHL_VIDEO_DOWNLOADER_PROBE' || event.data?.type !== 'MEDIA_URLS') return;
-    for (const u of event.data.urls || []) remember(u, 'probe');
+    for (const url of event.data.urls || []) remember(url, 'probe');
   });
 
-  chrome.runtime.onMessage.addListener((msg) => {
+  chrome.runtime.onMessage.addListener(msg => {
     if (msg?.type === 'MEDIA_SEEN' && msg.url) remember(msg.url, 'network');
+    if (msg?.type !== 'DOWNLOAD_PROGRESS') return;
+
+    const row = document.getElementById('ghl-video-download-progress-row');
+    const bar = document.getElementById('ghl-video-download-progress');
+    const pct = document.getElementById('ghl-video-download-percent');
+    const status = document.getElementById('ghl-video-download-status');
+    if (!row || !bar || !pct) return;
+
+    const percent = Math.max(0, Math.min(100, Number(msg.percent) || 0));
+    row.style.display = 'flex';
+    bar.value = percent;
+    pct.textContent = `${Math.round(percent)}%`;
+    if (status && msg.text) status.textContent = msg.text;
   });
-
-  function lessonName() {
-    const breadcrumbNodes = [...document.querySelectorAll('[class*="breadcrumb"] a, [class*="breadcrumb"] span, nav[aria-label*="breadcrumb" i] a, nav[aria-label*="breadcrumb" i] span')];
-    const breadcrumbTitles = breadcrumbNodes
-      .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim())
-      .filter(t => /^\d{1,3}\s*[-.].{2,180}$/.test(t));
-    if (breadcrumbTitles.length) return cleanName(breadcrumbTitles[breadcrumbTitles.length - 1]);
-
-    const candidates = [...document.querySelectorAll('h1, h2, h3, [class*="lesson-title"], [class*="lesson_name"], [class*="title"]')]
-      .map(el => (el.textContent || '').replace(/\s+/g, ' ').trim())
-      .filter(t => t.length >= 3 && t.length <= 220)
-      .filter(t => !/about this lesson|instructor|login|sign up|courses|categories/i.test(t));
-    const numbered = candidates.find(t => /^\d{1,3}\s*[-.]/.test(t));
-    if (numbered) return cleanName(numbered);
-    return cleanName(document.title.split('|')[0]);
-  }
 
   function findVideo() {
     const videos = [...document.querySelectorAll('video')].filter(v => {
       const r = v.getBoundingClientRect();
       return r.width > 100 && r.height > 70;
     });
-    return videos.sort((a,b) => {
-      const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+    return videos.sort((a, b) => {
+      const ar = a.getBoundingClientRect();
+      const br = b.getBoundingClientRect();
       return (br.width * br.height) - (ar.width * ar.height);
     })[0] || document.querySelector('video');
   }
 
-  function isHls(u) { return /\.m3u8(?:$|[?#])/i.test(u || '') || /(?:m3u8|playlist|manifest)/i.test(u || ''); }
-  function isDirectVideo(u) { return /\.(?:mp4|m4v|webm|mov)(?:$|[?#])/i.test(u || ''); }
-  function isLikelySegment(u) { return /\.(?:m4s|ts|aac)(?:$|[?#])/i.test(u || '') || /segment|chunk|frag(?:ment)?/i.test(u || ''); }
+  function lessonName() {
+    const active = getLessonAnchors().find(item => isActiveLesson(item.el));
+    if (active?.title) return active.title;
+
+    const candidates = [...document.querySelectorAll(
+      '[class*="breadcrumb"] span, [class*="breadcrumb"] a, h1, h2, h3, [class*="lesson-title"], [class*="lesson_name"], [class*="title"]'
+    )]
+      .map(text)
+      .filter(t => t.length >= 3 && t.length <= 220)
+      .filter(t => !/about this lesson|instructor|dashboard|courses|categories|login|sign up/i.test(t));
+
+    return cleanName(candidates.find(t => /^\d{1,3}\s*[-.)]/.test(t)) || document.title.split('|')[0]);
+  }
+
+  function isNumberedLesson(value) {
+    return /^\d{1,3}\s*[-.)]\s*\S|^\d{1,3}\s*-\S/.test(value || '');
+  }
+
+  function badNavigationHref(href) {
+    if (!href) return false;
+    try {
+      const u = new URL(href, location.href);
+      const p = u.pathname.replace(/\/+$/, '').toLowerCase();
+      if (/(^|\/)(dashboard|home)$/.test(p)) return true;
+      if (/(^|\/)(courses?|products?|memberships?|communities)$/.test(p)) return true;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function getLessonAnchors() {
+    const items = [];
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href]')) {
+      const title = text(a);
+      if (!isNumberedLesson(title)) continue;
+      if (badNavigationHref(a.href)) continue;
+      const key = normalizeUrl(a.href) + '|' + title;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ el: a, url: normalizeUrl(a.href), title: cleanName(title) });
+    }
+    return items;
+  }
+
+  function isActiveLesson(el) {
+    if (!el) return false;
+    if (el.matches('[aria-current="page"], [aria-current="true"], .active, .selected')) return true;
+    return !!el.closest('[aria-current="page"], [aria-current="true"], .active, .selected, [class*="active"], [class*="selected"]');
+  }
+
+  function currentLessonIndex(items) {
+    let index = items.findIndex(item => isActiveLesson(item.el));
+    if (index >= 0) return index;
+
+    const here = normalizeUrl(location.href);
+    index = items.findIndex(item => item.url === here);
+    if (index >= 0) return index;
+
+    const name = lessonName().toLowerCase();
+    return items.findIndex(item => item.title.toLowerCase() === name);
+  }
+
+  function nextLessonTarget() {
+    const items = getLessonAnchors();
+    if (!items.length) return null;
+    const index = currentLessonIndex(items);
+    if (index >= 0 && index + 1 < items.length) return items[index + 1];
+    return null;
+  }
+
+  function visibleControls() {
+    return [...document.querySelectorAll('a[href], button, [role="button"]')].filter(el => el.offsetParent !== null);
+  }
+
+  function findNextLessonControl() {
+    return visibleControls().find(el => {
+      const label = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${text(el)}`.trim();
+      if (!/\bnext\b/i.test(label)) return false;
+      if (/category|module|section|course|dashboard|home/i.test(label)) return false;
+      return /lesson|step|video|continue/i.test(label) || !!el.closest('[class*="lesson"], [class*="player"], [class*="navigation"], nav');
+    }) || null;
+  }
+
+  function findNextCategoryControl() {
+    return visibleControls().find(el => {
+      const label = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${text(el)}`.trim();
+      return /next\s+(category|module|section)/i.test(label);
+    }) || null;
+  }
+
+  function safeClick(target) {
+    const el = target?.el || target;
+    if (!el || !el.isConnected || el.offsetParent === null) return false;
+    if (el.tagName === 'A' && badNavigationHref(el.href)) return false;
+    try {
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    } catch (_) {}
+    try {
+      el.click();
+      return true;
+    } catch (_) {
+      try {
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  function lessonSignature() {
+    const items = getLessonAnchors();
+    const index = currentLessonIndex(items);
+    const active = index >= 0 ? items[index] : null;
+    return `${active?.title || lessonName()}|${active?.url || normalizeUrl(location.href)}`;
+  }
 
   async function getNetworkCandidates() {
     try {
-      const r = await chrome.runtime.sendMessage({ type: 'GET_MEDIA_CANDIDATES' });
-      for (const item of r?.items || []) remember(item.url, 'network-cache');
+      const result = await chrome.runtime.sendMessage({ type: 'GET_MEDIA_CANDIDATES' });
+      for (const item of result?.items || []) remember(item.url, 'network-cache');
     } catch (_) {}
   }
 
   function bestMediaUrl(video) {
     const direct = [video?.currentSrc, video?.src, video?.querySelector('source')?.src]
-      .find(u => u && !u.startsWith('blob:') && (isHls(u) || isDirectVideo(u)));
+      .find(url => url && !url.startsWith('blob:') && (isHls(url) || isDirectVideo(url)));
     if (direct) return direct;
 
-    const items = [...state.mediaUrls.values()].sort((a,b) => b.seenAt - a.seenAt);
-    const hls = items.find(x => isHls(x.url));
-    if (hls) return hls.url;
-    const directVideo = items.find(x => isDirectVideo(x.url) && !isLikelySegment(x.url));
-    return directVideo?.url || '';
+    const candidates = [...state.media.values()].sort((a, b) => b.seenAt - a.seenAt);
+    return candidates.find(item => isHls(item.url))?.url || candidates.find(item => isDirectVideo(item.url))?.url || '';
   }
 
-  async function forcePlayerActivity(video, status, elapsed, batch) {
+  async function forcePlayback(video, status, elapsed) {
     if (!video) return;
     try {
       video.muted = true;
@@ -138,319 +250,339 @@
       video.autoplay = true;
       if (video.paused) await video.play();
     } catch (_) {
-      const play = [...document.querySelectorAll('button, [role="button"]')].find(el => {
-        const t = ((el.getAttribute('aria-label') || '') + ' ' + (el.title || '') + ' ' + (el.textContent || '')).trim();
-        return /(^|\s)play(\s|$)/i.test(t) && el.offsetParent !== null;
+      const play = visibleControls().find(el => {
+        const label = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${text(el)}`.trim();
+        return /(^|\s)play(\s|$)/i.test(label);
       });
       try { play?.click(); } catch (_) {}
     }
 
     if (elapsed >= 6 && Number.isFinite(video.duration) && video.duration > 12) {
       try {
-        const target = Math.min(Math.max(2, video.duration * 0.04), 8);
-        if (Math.abs(video.currentTime - target) > 1) video.currentTime = target;
+        const seek = Math.min(Math.max(2, video.duration * 0.04), 8);
+        if (Math.abs(video.currentTime - seek) > 1) video.currentTime = seek;
       } catch (_) {}
     }
-    if (status) status.textContent = batch
-      ? `Waiting for GHL video stream… ${elapsed}s`
-      : `Waiting for GHL video stream… ${elapsed}s`;
+    if (status) status.textContent = `Waiting for GHL video stream… ${elapsed}s`;
   }
 
-  async function detectMediaUrl(status, options = {}) {
-    const timeout = options.timeout || 22000;
+  async function detectMedia(status, timeout = 24000) {
     const started = Date.now();
-    let lastVideo = findVideo();
+    let video = findVideo();
 
     while (Date.now() - started < timeout) {
-      const video = findVideo() || lastVideo;
-      if (video) lastVideo = video;
+      video = findVideo() || video;
       await getNetworkCandidates();
       const url = bestMediaUrl(video);
-      if (url) return { url, video };
+      if (url) return url;
 
       const elapsed = Math.floor((Date.now() - started) / 1000);
-      await forcePlayerActivity(video, status, elapsed, options.batch);
-      await sleep(elapsed < 5 ? 700 : 1100);
+      await forcePlayback(video, status, elapsed);
+      await sleep(elapsed < 5 ? 700 : 1000);
     }
-    return { url: '', video: lastVideo };
+    return '';
   }
 
-  function lessonText(el) { return (el?.textContent || '').replace(/\s+/g, ' ').trim(); }
-  function isNumberedLessonText(text) { return /^\d{1,3}\s*[-.)]\s*\S|^\d{1,3}\s*-\S/.test(text || ''); }
+  async function getBatch() {
+    return new Promise(resolve => chrome.storage.local.get(COURSE_KEY, result => resolve(result[COURSE_KEY] || null)));
+  }
 
-  function getLessonAnchors() {
-    const unique = new Map();
-    for (const a of [...document.querySelectorAll('a[href]')]) {
-      const text = lessonText(a);
-      if (!isNumberedLessonText(text)) continue;
-      let u; try { u = new URL(a.href, location.href); } catch (_) { continue; }
-      if (u.origin !== location.origin) continue;
-      const url = normalizeUrl(u.href);
-      if (!unique.has(url)) unique.set(url, { el:a, url, title:cleanName(text) });
+  async function setBatch(batch) {
+    return new Promise(resolve => chrome.storage.local.set({ [COURSE_KEY]: batch }, resolve));
+  }
+
+  async function clearBatch() {
+    return new Promise(resolve => chrome.storage.local.remove(COURSE_KEY, resolve));
+  }
+
+  function updateBatchUi(batch) {
+    const all = document.getElementById('ghl-video-download-all-btn');
+    const stop = document.getElementById('ghl-video-download-cancel-btn');
+    const info = document.getElementById('ghl-video-batch-status');
+    if (!all || !stop || !info) return;
+    const active = !!batch?.active;
+    all.style.display = active ? 'none' : '';
+    stop.style.display = active ? '' : 'none';
+    info.textContent = active ? `Automatic course download: ${batch.downloaded || 0} completed` : '';
+  }
+
+  async function downloadCurrent(status, btn, batchMode = false) {
+    if (state.downloading) throw new Error('A download is already running.');
+    state.downloading = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = batchMode ? 'Downloading course…' : 'Preparing…';
     }
-    return [...unique.values()];
+
+    const progressRow = document.getElementById('ghl-video-download-progress-row');
+    const progress = document.getElementById('ghl-video-download-progress');
+    const percent = document.getElementById('ghl-video-download-percent');
+    if (progressRow && progress && percent) {
+      progressRow.style.display = 'flex';
+      progress.value = 0;
+      percent.textContent = '0%';
+    }
+
+    try {
+      await resetMediaDetection();
+      status.textContent = `Starting ${lessonName()} automatically to detect stream…`;
+      const url = await detectMedia(status);
+      if (!url) throw new Error('Full video stream not found after automatic playback.');
+
+      status.textContent = isHls(url) ? 'Stream detected — preparing HLS download…' : 'Stream detected — starting download…';
+      const result = await chrome.runtime.sendMessage({
+        type: 'DOWNLOAD_MEDIA',
+        url,
+        filenameBase: lessonName()
+      });
+      if (!result?.ok) throw new Error(result?.error || 'Download failed');
+      status.textContent = result.message || 'Download started.';
+      return result;
+    } finally {
+      state.downloading = false;
+      if (btn?.isConnected) {
+        btn.disabled = false;
+        btn.textContent = '⬇ Download Video';
+      }
+    }
   }
 
-  function isCurrentLessonElement(el) {
-    if (!el) return false;
-    if (el.matches('[aria-current="page"], [aria-current="true"]')) return true;
-    return !!el.closest('[aria-current="page"], [aria-current="true"], .active, [class*="active"], [class*="selected"]');
-  }
+  async function navigateNext(batch, status) {
+    const next = nextLessonTarget();
+    if (next && safeClick(next)) {
+      status.textContent = `Download complete. Moving to next lesson: ${next.title}`;
+      batch.awaitingCategory = false;
+      await setBatch(batch);
+      return true;
+    }
 
-  function nextLessonTarget() {
-    const items = getLessonAnchors();
-    const here = normalizeUrl(location.href);
-    if (!items.length) return null;
-    const exact = items.findIndex(x => x.url === here);
-    if (exact >= 0 && exact + 1 < items.length) return items[exact + 1];
-    const active = items.findIndex(x => isCurrentLessonElement(x.el));
-    if (active >= 0 && active + 1 < items.length) return items[active + 1];
-    const currentTitle = lessonName().toLowerCase();
-    const sameTitle = items.findIndex(x => x.title.toLowerCase() === currentTitle);
-    if (sameTitle >= 0 && sameTitle + 1 < items.length) return items[sameTitle + 1];
-    return items.find(x => x.url !== here) || null;
-  }
+    const nextButton = findNextLessonControl();
+    if (nextButton && safeClick(nextButton)) {
+      status.textContent = 'Download complete. Moving to the next lesson…';
+      batch.awaitingCategory = false;
+      await setBatch(batch);
+      return true;
+    }
 
-  function findNextCategoryControl() {
-    const els = [...document.querySelectorAll('a[href], button, [role="button"]')];
-    return els.find(el => /^\s*next\s+(category|module|section)\s*$/i.test(lessonText(el))) || null;
-  }
-  function firstLessonTarget() {
-    const here = normalizeUrl(location.href);
-    return getLessonAnchors().find(x => x.url !== here) || null;
-  }
+    const nextCategory = findNextCategoryControl();
+    if (nextCategory && safeClick(nextCategory)) {
+      status.textContent = 'Category complete. Moving to the next category…';
+      batch.awaitingCategory = true;
+      await setBatch(batch);
+      return true;
+    }
 
-  async function getBatch() { return new Promise(resolve => chrome.storage.local.get(COURSE_KEY, r => resolve(r[COURSE_KEY] || null))); }
-  async function setBatch(batch) { return new Promise(resolve => chrome.storage.local.set({ [COURSE_KEY]: batch }, resolve)); }
-  async function clearBatch() { return new Promise(resolve => chrome.storage.local.remove(COURSE_KEY, resolve)); }
+    return false;
+  }
 
   async function startBatch(status) {
     if (!findVideo()) {
       status.textContent = 'Open a lesson with a video first, then click Download All Course Videos.';
       return;
     }
-    const batch = { active:true, startedAt:Date.now(), courseOrigin:location.origin, completed:[], failures:[], count:0, awaitingCategory:false, lastLessonUrl:null, lastLessonTitle:null, retries:{} };
+    const batch = {
+      active: true,
+      startedAt: Date.now(),
+      completed: [],
+      failed: [],
+      downloaded: 0,
+      retries: {},
+      awaitingCategory: false
+    };
     await setBatch(batch);
-    status.textContent = 'Automatic course download started. Preparing the current lesson…';
-    setTimeout(maybeRunBatch, 200);
+    state.navLock = false;
+    status.textContent = 'Automatic course download started…';
+    setTimeout(runBatch, 200);
   }
 
-  async function cancelBatch(status) {
+  async function stopBatch(status) {
     await clearBatch();
+    state.navLock = false;
+    updateBatchUi(null);
     if (status) status.textContent = 'Automatic course download stopped.';
-    updateBatchControls(null);
   }
 
-  function updateBatchControls(batch) {
-    const allBtn = document.getElementById('ghl-video-download-all-btn');
-    const cancelBtn = document.getElementById('ghl-video-download-cancel-btn');
-    const batchText = document.getElementById('ghl-video-batch-status');
-    if (!allBtn || !cancelBtn || !batchText) return;
-    const active = !!batch?.active;
-    allBtn.style.display = active ? 'none' : '';
-    cancelBtn.style.display = active ? '' : 'none';
-    batchText.textContent = active ? `Automatic course download: ${batch.count || 0} completed` : '';
-  }
-
-  async function download(btn, status, options = {}) {
-    const name = options.filenameBase || lessonName();
-    state.downloading = true;
-    if (btn) { btn.disabled = true; btn.textContent = options.batch ? 'Downloading course…' : 'Preparing…'; }
-
-    const progressRow = document.getElementById('ghl-video-download-progress-row');
-    const progress = document.getElementById('ghl-video-download-progress');
-    const percentText = document.getElementById('ghl-video-download-percent');
-    if (progressRow && progress && percentText) {
-      progressRow.style.display = 'flex'; progress.value = 0; percentText.textContent = '0%';
-    }
-
-    try {
-      status.textContent = options.batch ? `Starting ${name} automatically to detect stream…` : 'Starting video automatically to detect stream…';
-      const detected = await detectMediaUrl(status, { timeout: 22000, batch: !!options.batch });
-      if (!detected.url) throw new Error('Full video stream not found after automatic playback and 22-second detection.');
-
-      status.textContent = isHls(detected.url) ? 'Stream detected — preparing full HLS lesson…' : 'Stream detected — starting full video download…';
-      const result = await chrome.runtime.sendMessage({ type:'DOWNLOAD_MEDIA', url:detected.url, filenameBase:name });
-      if (!result?.ok) throw new Error(result?.error || 'Download failed');
-      status.textContent = result.message || 'Download started.';
-      return result;
-    } finally {
-      state.downloading = false;
-      if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = '⬇ Download Video'; }
-    }
-  }
-
-  async function resetForNewLesson() {
-    clearLocalMedia();
-    await clearWorkerMedia();
-    state.lessonToken = normalizeUrl(location.href);
-  }
-
-  async function navigateAfterLesson(batch, status) {
-    const next = nextLessonTarget();
-    if (next) {
-      status.textContent = `Download complete. Opening next lesson: ${next.title}`;
-      batch.awaitingCategory = false;
-      await setBatch(batch);
-      await sleep(900);
-      location.assign(next.url);
-      return true;
-    }
-    const nextCategory = findNextCategoryControl();
-    if (nextCategory) {
-      status.textContent = 'Category complete. Opening the next category…';
-      batch.awaitingCategory = true;
-      await setBatch(batch);
-      await sleep(600);
-      if (nextCategory.tagName === 'A' && nextCategory.href) location.assign(nextCategory.href); else nextCategory.click();
-      return true;
-    }
-    return false;
-  }
-
-  async function maybeRunBatch() {
-    if (state.batchStarting || state.downloading || state.navLock) return;
+  async function runBatch() {
+    if (state.batchBusy || state.downloading || state.navLock) return;
     const batch = await getBatch();
-    updateBatchControls(batch);
-    if (!batch?.active || (batch.courseOrigin && batch.courseOrigin !== location.origin)) return;
+    updateBatchUi(batch);
+    if (!batch?.active) return;
 
     const status = document.getElementById('ghl-video-download-status');
+    const btn = document.getElementById('ghl-video-download-btn');
     if (!status) return;
 
-    let video = findVideo();
-    if (!video && batch.awaitingCategory) {
-      const first = firstLessonTarget();
-      if (first) {
-        state.navLock = true;
-        batch.awaitingCategory = false;
-        await setBatch(batch);
-        status.textContent = `Opening first lesson in the new category: ${first.title}`;
-        await sleep(500);
-        location.assign(first.url);
-        return;
+    const video = findVideo();
+    if (!video) {
+      if (batch.awaitingCategory) {
+        const first = getLessonAnchors()[0];
+        if (first && safeClick(first)) {
+          batch.awaitingCategory = false;
+          await setBatch(batch);
+          state.navLock = true;
+          status.textContent = `Opening first lesson: ${first.title}`;
+          return;
+        }
       }
-      setTimeout(maybeRunBatch, 1000);
+      setTimeout(runBatch, 900);
       return;
     }
-    if (!video) { setTimeout(maybeRunBatch, 1000); return; }
 
-    const currentUrl = normalizeUrl(location.href);
-    const currentTitle = lessonName();
-
-    if ((batch.completed || []).includes(currentUrl)) {
+    const signature = lessonSignature();
+    if ((batch.completed || []).includes(signature)) {
       state.navLock = true;
-      const moved = await navigateAfterLesson(batch, status);
+      const moved = await navigateNext(batch, status);
       if (!moved) {
-        await clearBatch(); updateBatchControls(null);
-        status.textContent = `Course complete — downloaded ${batch.count || batch.completed.length} videos.`;
+        await clearBatch();
+        updateBatchUi(null);
+        status.textContent = `Course complete — downloaded ${batch.downloaded || 0} videos.`;
       }
       return;
     }
 
-    const btn = document.getElementById('ghl-video-download-btn');
     if (!btn) return;
-    state.batchStarting = true;
-    updateBatchControls(batch);
-
+    state.batchBusy = true;
     try {
-      await resetForNewLesson();
-      status.textContent = `Automatic download — video ${(batch.count || 0) + 1}: ${currentTitle}`;
-      await download(btn, status, { batch:true, filenameBase:currentTitle });
-      batch.completed = [...new Set([...(batch.completed || []), currentUrl])];
-      batch.count = batch.completed.length;
-      batch.lastLessonUrl = currentUrl;
-      batch.lastLessonTitle = currentTitle;
-      delete (batch.retries || {})[currentUrl];
+      status.textContent = `Automatic download ${Number(batch.downloaded || 0) + 1}: ${lessonName()}`;
+      await downloadCurrent(status, btn, true);
+
+      batch.completed = [...new Set([...(batch.completed || []), signature])];
+      batch.downloaded = Number(batch.downloaded || 0) + 1;
+      delete (batch.retries || {})[signature];
       await setBatch(batch);
-      updateBatchControls(batch);
+      updateBatchUi(batch);
+
       state.navLock = true;
-      const moved = await navigateAfterLesson(batch, status);
+      await sleep(700);
+      const moved = await navigateNext(batch, status);
       if (!moved) {
-        await clearBatch(); updateBatchControls(null);
-        status.textContent = `Course complete — downloaded ${batch.count} videos.`;
+        await clearBatch();
+        updateBatchUi(null);
+        status.textContent = `Course complete — downloaded ${batch.downloaded} videos.`;
       }
-    } catch (e) {
+    } catch (error) {
       batch.retries = batch.retries || {};
-      const tries = (batch.retries[currentUrl] || 0) + 1;
-      batch.retries[currentUrl] = tries;
+      const tries = Number(batch.retries[signature] || 0) + 1;
+      batch.retries[signature] = tries;
       await setBatch(batch);
 
       if (tries < 2) {
-        status.textContent = `Stream detection failed for ${currentTitle}. Retrying this lesson once…`;
-        await resetForNewLesson();
-        await sleep(2500);
-        state.batchStarting = false;
-        setTimeout(maybeRunBatch, 250);
-        return;
-      }
-
-      batch.failures = [...(batch.failures || []), { url:currentUrl, title:currentTitle, error:e.message || String(e) }];
-      batch.completed = [...new Set([...(batch.completed || []), currentUrl])];
-      await setBatch(batch);
-      status.textContent = `Could not download ${currentTitle}: ${e.message}. Moving to the next lesson…`;
-      state.navLock = true;
-      await sleep(1200);
-      const moved = await navigateAfterLesson(batch, status);
-      if (!moved) {
-        const failed = batch.failures.length;
-        await clearBatch(); updateBatchControls(null);
-        status.textContent = `Course batch finished. ${batch.count || 0} downloaded, ${failed} failed.`;
+        status.textContent = `Could not detect the stream. Retrying ${lessonName()} once…`;
+        await sleep(1800);
+      } else {
+        batch.failed = [...(batch.failed || []), { lesson: lessonName(), error: error.message || String(error) }];
+        batch.completed = [...new Set([...(batch.completed || []), signature])];
+        await setBatch(batch);
+        status.textContent = `Could not download ${lessonName()}. Moving to the next lesson…`;
+        state.navLock = true;
+        await sleep(700);
+        const moved = await navigateNext(batch, status);
+        if (!moved) {
+          await clearBatch();
+          updateBatchUi(null);
+        }
       }
     } finally {
-      state.batchStarting = false;
+      state.batchBusy = false;
+      if (!state.navLock) setTimeout(runBatch, 350);
     }
   }
 
   function mount() {
     const video = findVideo();
-    if (!video || !video.parentElement) return;
-    const existing = document.getElementById('ghl-video-downloader-wrap');
-    if (state.mountedFor === video && existing?.isConnected) return;
-    existing?.remove();
+    if (!video?.parentElement) return;
 
-    const wrap = document.createElement('div'); wrap.id = 'ghl-video-downloader-wrap';
-    const btn = document.createElement('button'); btn.id='ghl-video-download-btn'; btn.type='button'; btn.textContent='⬇ Download Video';
-    const allBtn = document.createElement('button'); allBtn.id='ghl-video-download-all-btn'; allBtn.type='button'; allBtn.textContent='⬇ Download All Course Videos';
-    const cancelBtn = document.createElement('button'); cancelBtn.id='ghl-video-download-cancel-btn'; cancelBtn.type='button'; cancelBtn.textContent='■ Stop Auto Download'; cancelBtn.style.display='none';
-    const status = document.createElement('span'); status.id='ghl-video-download-status'; status.textContent='File name: ' + lessonName();
-    const batchText = document.createElement('span'); batchText.id='ghl-video-batch-status';
-    const progressRow = document.createElement('div'); progressRow.id='ghl-video-download-progress-row';
-    const progress = document.createElement('progress'); progress.id='ghl-video-download-progress'; progress.max=100; progress.value=0;
-    const percentText = document.createElement('span'); percentText.id='ghl-video-download-percent'; percentText.textContent='0%';
-    progressRow.append(progress, percentText); wrap.append(btn, allBtn, cancelBtn, status, batchText, progressRow);
+    const old = document.getElementById('ghl-video-downloader-wrap');
+    if (state.mountedVideo === video && old?.isConnected) return;
+    old?.remove();
 
+    const wrap = document.createElement('div');
+    wrap.id = 'ghl-video-downloader-wrap';
+
+    const btn = document.createElement('button');
+    btn.id = 'ghl-video-download-btn';
+    btn.type = 'button';
+    btn.textContent = '⬇ Download Video';
+
+    const all = document.createElement('button');
+    all.id = 'ghl-video-download-all-btn';
+    all.type = 'button';
+    all.textContent = '⬇ Download All Course Videos';
+
+    const stop = document.createElement('button');
+    stop.id = 'ghl-video-download-cancel-btn';
+    stop.type = 'button';
+    stop.textContent = '■ Stop Auto Download';
+    stop.style.display = 'none';
+
+    const status = document.createElement('span');
+    status.id = 'ghl-video-download-status';
+    status.textContent = 'File name: ' + lessonName();
+
+    const batchInfo = document.createElement('span');
+    batchInfo.id = 'ghl-video-batch-status';
+
+    const row = document.createElement('div');
+    row.id = 'ghl-video-download-progress-row';
+    const progress = document.createElement('progress');
+    progress.id = 'ghl-video-download-progress';
+    progress.max = 100;
+    progress.value = 0;
+    const percent = document.createElement('span');
+    percent.id = 'ghl-video-download-percent';
+    percent.textContent = '0%';
+    row.append(progress, percent);
+
+    wrap.append(btn, all, stop, status, batchInfo, row);
     const container = video.closest('[class*="video"], [class*="player"], .aspect-video') || video.parentElement;
     container.insertAdjacentElement('afterend', wrap);
 
     btn.addEventListener('click', async () => {
       try {
-        await resetForNewLesson();
-        await download(btn, status, { filenameBase: lessonName() });
-      } catch (e) { status.textContent = `Download failed: ${e.message}`; }
+        await downloadCurrent(status, btn, false);
+      } catch (error) {
+        status.textContent = `Download failed: ${error.message || error}`;
+      }
     });
-    allBtn.addEventListener('click', () => startBatch(status));
-    cancelBtn.addEventListener('click', () => cancelBatch(status));
+    all.addEventListener('click', () => startBatch(status));
+    stop.addEventListener('click', () => stopBatch(status));
 
-    state.mountedFor = video;
-    getBatch().then(updateBatchControls).then(() => setTimeout(maybeRunBatch, 200));
+    state.mountedVideo = video;
+    getBatch().then(batch => {
+      updateBatchUi(batch);
+      if (batch?.active) setTimeout(runBatch, 250);
+    });
   }
 
-  function watchLessonChange() {
-    const now = normalizeUrl(location.href);
-    if (now !== state.lessonToken) {
-      state.lessonToken = now;
-      state.navLock = false;
-      state.mountedFor = null;
-      clearLocalMedia();
-      clearWorkerMedia();
-      setTimeout(mount, 150);
-      setTimeout(maybeRunBatch, 500);
-    }
+  function detectLessonChange() {
+    const signature = lessonSignature();
+    if (!signature || signature === state.lastLessonSignature) return;
+
+    const previous = state.lastLessonSignature;
+    state.lastLessonSignature = signature;
+    if (!previous) return;
+
+    state.navLock = false;
+    state.mountedVideo = null;
+    clearLocalMedia();
+    clearWorkerMedia();
+    setTimeout(mount, 120);
+    setTimeout(runBatch, 450);
   }
 
   injectProbe();
+  state.lastLessonSignature = lessonSignature();
   mount();
-  const observer = new MutationObserver(() => { watchLessonChange(); mount(); });
-  observer.observe(document.documentElement, { childList:true, subtree:true });
-  setInterval(() => { watchLessonChange(); mount(); maybeRunBatch(); }, 1200);
+
+  const observer = new MutationObserver(() => {
+    detectLessonChange();
+    mount();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-current'] });
+
+  setInterval(() => {
+    detectLessonChange();
+    mount();
+    runBatch();
+  }, 1200);
 })();

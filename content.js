@@ -10,25 +10,75 @@
     downloadingAll: false,
     currentLabel: '',
     scanBusy: false,
-    lastNetworkPull: 0
+    lastNetworkPull: 0,
+    pageSignature: '',
+    changeTimer: 0,
+    suppressChangeUntil: 0
   };
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const clean = value => (value || 'Video').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 170) || 'Video';
+  const sanitize = value => String(value || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 170);
+  const clean = value => sanitize(value) || 'Video';
   const isHls = url => /\.m3u8(?:$|[?#])/i.test(url || '') || /m3u8|playlist|manifest/i.test(url || '');
   const isDirect = url => /\.(?:mp4|m4v|webm|mov)(?:$|[?#])/i.test(url || '');
 
-  function pageTitle() {
-    return clean(document.querySelector('h1')?.textContent || document.title || location.hostname || 'Video');
+  function visible(el) {
+    if (!el?.isConnected) return false;
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function candidateTexts(selector) {
+    return [...document.querySelectorAll(selector)]
+      .filter(visible)
+      .map(el => sanitize(el.textContent))
+      .filter(t => t && t.length >= 2 && t.length <= 180);
+  }
+
+  function lessonTitle() {
+    // 1) Current/selected lesson in navigation.
+    const selectedSelectors = [
+      '[aria-current="page"]', '[aria-current="true"]',
+      '[data-active="true"]', '[data-selected="true"]',
+      '.active', '.selected',
+      '[class*="lesson"][class*="active"]', '[class*="lesson"][class*="selected"]'
+    ];
+    for (const selector of selectedSelectors) {
+      for (const el of document.querySelectorAll(selector)) {
+        if (!visible(el)) continue;
+        const t = sanitize(el.textContent);
+        if (t && t.length <= 180 && !/^(home|courses?|lessons?|categories?|next|previous)$/i.test(t)) return t;
+      }
+    }
+
+    // 2) Main visible lesson heading. This matches pages like DigitalMarketer where the lesson title is the H1.
+    const headings = candidateTexts('main h1, [role="main"] h1, article h1, h1, main h2, [role="main"] h2');
+    const heading = headings.find(t => !/^(lessons?|courses?|dashboard|instructor|about this lesson)$/i.test(t));
+    if (heading) return heading;
+
+    // 3) Breadcrumb / trail: use the last meaningful visible item.
+    const crumbs = candidateTexts('[aria-label*="breadcrumb" i] a, [aria-label*="breadcrumb" i] span, .breadcrumb a, .breadcrumb span, [class*="breadcrumb"] a, [class*="breadcrumb"] span');
+    if (crumbs.length) return crumbs[crumbs.length - 1];
+
+    // 4) Page title as fallback.
+    const doc = sanitize(document.title.replace(/\s*[|–—-]\s*[^|–—-]+$/, ''));
+    return doc || sanitize(location.hostname) || 'Video';
   }
 
   function nearbyTitle(video, index) {
-    const labelled = video.getAttribute('aria-label') || video.getAttribute('title') || '';
-    if (labelled) return clean(labelled);
+    const labelled = sanitize(video.getAttribute('aria-label') || video.getAttribute('title'));
+    if (labelled) return labelled;
     const container = video.closest('article, section, figure, [class*="video"], [class*="player"]');
-    const heading = container?.querySelector('h1,h2,h3,h4,h5,h6,[class*="title"]');
-    const title = clean(heading?.textContent || '');
-    return title && title !== 'Video' ? title : `${pageTitle()} - Video ${index + 1}`;
+    const heading = sanitize(container?.querySelector('h1,h2,h3,h4,h5,h6,[class*="title"]')?.textContent);
+    return heading || lessonTitle() || `Video ${index + 1}`;
+  }
+
+  function pageSignature() {
+    const video = document.querySelector('video');
+    const src = video?.currentSrc || video?.src || video?.querySelector('source')?.src || '';
+    return `${location.href}|${lessonTitle().toLowerCase()}|${src.startsWith('blob:') ? 'blob' : src}`;
   }
 
   function normalizeCandidate(item) {
@@ -42,7 +92,8 @@
       mime: item.mime || '',
       contentLength: Number(item.contentLength || 0),
       source: item.source || 'page',
-      name: clean(item.name || '')
+      // IMPORTANT: keep unnamed network candidates empty so they receive the CURRENT lesson title later.
+      name: sanitize(item.name)
     };
   }
 
@@ -50,7 +101,8 @@
     const c = normalizeCandidate(item);
     if (!c) return false;
     const prev = state.candidates.get(c.url) || {};
-    state.candidates.set(c.url, { ...prev, ...c });
+    const name = c.name || prev.name || '';
+    state.candidates.set(c.url, { ...prev, ...c, name });
     return !prev.url;
   }
 
@@ -72,7 +124,7 @@
     let changed = false;
     try {
       const entries = performance.getEntriesByType('resource');
-      const start = Math.max(0, entries.length - 200);
+      const start = Math.max(0, entries.length - 180);
       for (let i = start; i < entries.length; i++) {
         const url = entries[i]?.name || '';
         if (!isHls(url) && !isDirect(url)) continue;
@@ -84,7 +136,7 @@
 
   async function pullNetworkCandidates(force = false) {
     const now = Date.now();
-    if (!force && now - state.lastNetworkPull < 1200) return false;
+    if (!force && now - state.lastNetworkPull < 1000) return false;
     state.lastNetworkPull = now;
     let changed = false;
     try {
@@ -128,8 +180,13 @@
     }
     const all = [...selectedHls, ...uniqueDirect];
     all.sort((a, b) => (b.contentLength || 0) - (a.contentLength || 0));
-    const page = pageTitle();
-    return all.map((item, i) => ({ ...item, name: clean(item.name || `${page} - Video ${i + 1}`) }));
+    const currentName = lessonTitle();
+    return all.map((item, i) => ({
+      ...item,
+      // A single video gets exactly the current lesson/page name.
+      // Multiple videos get a suffix only when needed.
+      name: clean(item.name || (all.length === 1 ? currentName : `${currentName} - Video ${i + 1}`))
+    }));
   }
 
   function ensureLauncher() {
@@ -173,7 +230,7 @@
         <div id="page-video-downloader-list"></div>
       </div>`;
     document.documentElement.appendChild(panel);
-    panel.querySelector('#page-video-downloader-close').addEventListener('click', () => closePanel());
+    panel.querySelector('#page-video-downloader-close').addEventListener('click', closePanel);
     panel.querySelector('#page-video-downloader-scan').addEventListener('click', () => scan(true));
     panel.querySelector('#page-video-downloader-all').addEventListener('click', downloadAll);
     state.panel = panel;
@@ -192,18 +249,26 @@
     state.panelOpen = false;
   }
 
+  function setStatus(text) {
+    const status = document.getElementById('page-video-downloader-status');
+    if (status) status.textContent = text;
+  }
+
   function render() {
     if (!state.panelOpen) return;
     const panel = createPanel();
     const items = dedupedCandidates();
     const summary = panel.querySelector('#page-video-downloader-summary');
     const list = panel.querySelector('#page-video-downloader-list');
-    summary.textContent = items.length ? `${items.length} downloadable video${items.length === 1 ? '' : 's'} detected on this page.` : 'No video detected yet. Play the video or click Scan.';
+    const current = lessonTitle();
+    summary.textContent = items.length
+      ? `${items.length} downloadable video${items.length === 1 ? '' : 's'} detected • ${current}`
+      : `Current page: ${current} • No video detected yet. Play the video or click Scan.`;
     list.replaceChildren();
     if (!items.length) {
       const empty = document.createElement('div');
       empty.className = 'pvd-empty';
-      empty.textContent = 'Play a video or click Scan to detect lazy-loaded streams.';
+      empty.textContent = 'Play the current video or click Scan to detect its stream.';
       list.appendChild(empty);
       return;
     }
@@ -237,17 +302,12 @@
     });
   }
 
-  function setStatus(text) {
-    const status = document.getElementById('page-video-downloader-status');
-    if (status) status.textContent = text;
-  }
-
   async function triggerVideoRequests() {
     const videos = [...document.querySelectorAll('video')].filter(v => {
       const r = v.getBoundingClientRect();
       return r.width > 60 && r.height > 40;
     });
-    for (const video of videos.slice(0, 12)) {
+    for (const video of videos.slice(0, 8)) {
       const wasPaused = video.paused;
       const wasMuted = video.muted;
       const oldVolume = video.volume;
@@ -256,7 +316,7 @@
         video.volume = 0;
         if (video.paused) await video.play();
       } catch (_) {}
-      await sleep(450);
+      await sleep(500);
       try {
         if (wasPaused) video.pause();
         video.muted = wasMuted;
@@ -269,16 +329,16 @@
     if (state.scanBusy) return dedupedCandidates().length;
     state.scanBusy = true;
     try {
-      setStatus(deep ? 'Scanning and briefly starting visible videos…' : 'Scanning page…');
+      setStatus(deep ? `Scanning ${lessonTitle()} and briefly starting visible video…` : `Scanning ${lessonTitle()}…`);
       await pullNetworkCandidates(true);
       if (deep) {
         await triggerVideoRequests();
-        await sleep(200);
+        await sleep(250);
         await pullNetworkCandidates(true);
       }
       render();
       const count = dedupedCandidates().length;
-      setStatus(count ? `${count} video${count === 1 ? '' : 's'} detected.` : 'No downloadable video stream detected yet.');
+      setStatus(count ? `${count} video${count === 1 ? '' : 's'} detected for ${lessonTitle()}.` : `No downloadable stream detected for ${lessonTitle()} yet.`);
       return count;
     } finally {
       state.scanBusy = false;
@@ -286,9 +346,18 @@
   }
 
   async function downloadItem(item, index, total) {
-    state.currentLabel = total > 1 ? `Video ${index + 1}/${total}` : item.name;
-    setStatus(`${state.currentLabel}: preparing ${item.name}…`);
-    const result = await chrome.runtime.sendMessage({ type: 'DOWNLOAD_MEDIA', url: item.url, kind: item.kind, mime: item.mime, filenameBase: item.name });
+    // Re-resolve the filename at click time so SPA lesson changes always use the current title.
+    const current = lessonTitle();
+    const filenameBase = total === 1 ? current : (item.name || `${current} - Video ${index + 1}`);
+    state.currentLabel = total > 1 ? `Video ${index + 1}/${total}` : current;
+    setStatus(`${state.currentLabel}: preparing ${filenameBase}…`);
+    const result = await chrome.runtime.sendMessage({
+      type: 'DOWNLOAD_MEDIA',
+      url: item.url,
+      kind: item.kind,
+      mime: item.mime,
+      filenameBase
+    });
     if (!result?.ok) throw new Error(result?.error || 'Download failed');
     if (item.kind !== 'hls') setStatus(`${state.currentLabel}: ${result.message || 'Download started.'}`);
   }
@@ -306,7 +375,7 @@
         catch (error) { setStatus(`Video ${i + 1}/${items.length} failed: ${error.message || error}. Continuing…`); }
         await sleep(200);
       }
-      setStatus(`Finished processing ${items.length} detected video${items.length === 1 ? '' : 's'}.`);
+      setStatus(`Finished processing ${items.length} detected video${items.length === 1 ? '' : 's'} for ${lessonTitle()}.`);
     } catch (error) {
       setStatus(`Download failed: ${error.message || error}`);
     } finally {
@@ -333,29 +402,68 @@
     status.textContent = `${state.currentLabel ? state.currentLabel + ': ' : ''}${msg.text || `${Math.round(bar.value)}%`}`;
   });
 
-  function nodeContainsVideo(node) {
-    if (!(node instanceof Element)) return false;
-    return node.matches('video,source') || !!node.querySelector('video,source');
+  async function resetForNewPage(reason = 'lesson changed') {
+    if (Date.now() < state.suppressChangeUntil) return;
+    state.suppressChangeUntil = Date.now() + 500;
+    state.candidates.clear();
+    state.lastNetworkPull = 0;
+    try { await chrome.runtime.sendMessage({ type: 'CLEAR_MEDIA_CANDIDATES' }); } catch (_) {}
+    if (state.panelOpen) {
+      setStatus(`${reason}. Waiting for the new video stream…`);
+      render();
+    }
+    // Give SPA/custom player time to replace/reload its media source, then scan the NEW lesson only.
+    await sleep(700);
+    collectDomCandidates();
+    await pullNetworkCandidates(true);
+    if (state.panelOpen) render();
   }
 
-  let mutationTimer = 0;
+  function schedulePageChangeCheck() {
+    clearTimeout(state.changeTimer);
+    state.changeTimer = setTimeout(async () => {
+      const next = pageSignature();
+      if (!state.pageSignature) {
+        state.pageSignature = next;
+        return;
+      }
+      if (next !== state.pageSignature) {
+        state.pageSignature = next;
+        await resetForNewPage('New lesson/page detected');
+      }
+    }, 250);
+  }
+
   const observer = new MutationObserver(mutations => {
-    if (!mutations.some(m => [...m.addedNodes].some(nodeContainsVideo))) return;
-    clearTimeout(mutationTimer);
-    mutationTimer = setTimeout(() => {
-      const changed = collectDomCandidates();
-      if (changed && state.panelOpen) render();
-      ensureLauncher();
-    }, 600);
+    let relevant = false;
+    for (const m of mutations) {
+      if (m.type === 'attributes') {
+        if (['src', 'class', 'aria-current', 'data-active', 'data-selected'].includes(m.attributeName)) relevant = true;
+      } else if (m.addedNodes.length || m.removedNodes.length) {
+        relevant = true;
+      }
+      if (relevant) break;
+    }
+    if (!relevant) return;
+    ensureLauncher();
+    schedulePageChangeCheck();
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['src', 'class', 'aria-current', 'data-active', 'data-selected']
+  });
+
+  // popstate covers browser/back-forward SPA navigation. The MutationObserver covers in-app lesson clicks.
+  addEventListener('popstate', schedulePageChangeCheck);
+  addEventListener('hashchange', schedulePageChangeCheck);
 
   const init = () => {
-    if (document.querySelector('video')) {
-      ensureLauncher();
-      collectDomCandidates();
-    }
+    ensureLauncher();
+    collectDomCandidates();
+    state.pageSignature = pageSignature();
   };
-  if ('requestIdleCallback' in window) requestIdleCallback(init, { timeout: 1500 });
-  else setTimeout(init, 500);
+  if ('requestIdleCallback' in window) requestIdleCallback(init, { timeout: 1200 });
+  else setTimeout(init, 350);
 })();

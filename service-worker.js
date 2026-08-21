@@ -4,6 +4,7 @@ const mediaByTab = new Map();
 
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|mov)(?:$|[?#])/i;
 const HLS_RE = /\.m3u8(?:$|[?#])/i;
+const REQUEST_FILTER = { urls: ['<all_urls>'], types: ['media', 'xmlhttprequest', 'other'] };
 
 function mediaKind(url = '', mime = '') {
   const m = String(mime).toLowerCase();
@@ -19,32 +20,44 @@ function upsert(tabId, item) {
   const merged = { ...(idx >= 0 ? arr[idx] : {}), ...item, seenAt: Date.now() };
   if (idx >= 0) arr.splice(idx, 1);
   arr.unshift(merged);
-  mediaByTab.set(tabId, arr.slice(0, 250));
-  chrome.tabs.sendMessage(tabId, { type: 'MEDIA_SEEN', item: merged }).catch(() => {});
+  // Keep a small bounded cache. The content script pulls this only when the user opens/scans the panel.
+  mediaByTab.set(tabId, arr.slice(0, 100));
 }
 
 chrome.webRequest.onBeforeRequest.addListener(details => {
+  if (details.tabId < 0) return;
   const kind = mediaKind(details.url);
-  if (!kind || details.tabId < 0) return;
-  upsert(details.tabId, { url: details.url, kind, requestType: details.type || '', frameId: details.frameId, source: 'request' });
-}, { urls: ['<all_urls>'] });
+  if (!kind) return;
+  upsert(details.tabId, {
+    url: details.url,
+    kind,
+    requestType: details.type || '',
+    frameId: details.frameId,
+    source: 'request'
+  });
+}, REQUEST_FILTER);
 
 chrome.webRequest.onHeadersReceived.addListener(details => {
   if (details.tabId < 0) return;
-  const headers = Object.fromEntries((details.responseHeaders || []).map(h => [String(h.name || '').toLowerCase(), h.value || '']));
-  const mime = headers['content-type'] || '';
+  let mime = '';
+  let contentLength = 0;
+  for (const header of details.responseHeaders || []) {
+    const name = String(header.name || '').toLowerCase();
+    if (name === 'content-type') mime = header.value || '';
+    else if (name === 'content-length') contentLength = Number(header.value || 0) || 0;
+  }
   const kind = mediaKind(details.url, mime);
   if (!kind) return;
   upsert(details.tabId, {
     url: details.url,
     kind,
     mime,
-    contentLength: Number(headers['content-length'] || 0) || 0,
+    contentLength,
     requestType: details.type || '',
     frameId: details.frameId,
     source: 'response'
   });
-}, { urls: ['<all_urls>'] }, ['responseHeaders']);
+}, REQUEST_FILTER, ['responseHeaders']);
 
 chrome.tabs.onRemoved.addListener(tabId => mediaByTab.delete(tabId));
 chrome.tabs.onUpdated.addListener((tabId, info) => {
@@ -112,7 +125,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tabId = sender.tab?.id;
       if (kind === 'hls') {
         await ensureOffscreen();
-        const response = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'DOWNLOAD_HLS', url: msg.url, filenameBase, tabId });
+        const response = await chrome.runtime.sendMessage({
+          target: 'offscreen',
+          type: 'DOWNLOAD_HLS',
+          url: msg.url,
+          filenameBase,
+          tabId
+        });
         sendResponse(response || { ok: false, error: 'No response from HLS downloader.' });
         return;
       }

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071b1e"/><stop offset="1" stop-color="#0c3436"/></linearGradient>
+    <style>
+      .title{font:700 36px Arial,sans-serif;fill:#fff}.step{font:700 22px Arial,sans-serif;fill:#fff}.txt{font:400 17px Arial,sans-serif;fill:#d5e7e8}.num{font:700 28px Arial,sans-serif;fill:#071b1e}.mono{font:600 15px monospace;fill:#17363a}.btn{font:700 15px Arial,sans-serif;fill:#fff}
+    </style>
+  </defs>
+  <rect width="1200" height="620" rx="28" fill="url(#bg)"/>
+  <text x="60" y="65" class="title">Install Any Video Downloader in Chrome</text>
+  <g transform="translate(45 110)">
+    <rect width="260" height="445" rx="20" fill="#fff" opacity=".98"/>
+    <circle cx="38" cy="38" r="22" fill="#25d0ae"/><text x="30" y="47" class="num">1</text>
+    <text x="72" y="44" class="step" fill="#17363a">Download ZIP</text>
+    <rect x="25" y="85" width="210" height="170" rx="12" fill="#f3f7f7" stroke="#cbdadb"/>
+    <path d="M130 112v72m0 0l-28-28m28 28l28-28" fill="none" stroke="#0aa58f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="62" y="205" width="136" height="36" rx="9" fill="#0aa58f"/><text x="83" y="229" class="btn">Code → ZIP</text>
+    <text x="25" y="295" class="txt" fill="#35565a">Open the GitHub repository</text>
+    <text x="25" y="322" class="txt" fill="#35565a">and choose:</text>
+    <text x="25" y="352" class="mono">Code → Download ZIP</text>
+    <text x="25" y="397" class="txt" fill="#35565a">Then extract the ZIP to a</text>
+    <text x="25" y="424" class="txt" fill="#35565a">folder on your computer.</text>
+  </g>
+  <g transform="translate(330 110)">
+    <rect width="260" height="445" rx="20" fill="#fff" opacity=".98"/>
+    <circle cx="38" cy="38" r="22" fill="#25d0ae"/><text x="30" y="47" class="num">2</text>
+    <text x="72" y="44" class="step" fill="#17363a">Open Extensions</text>
+    <rect x="22" y="85" width="216" height="170" rx="12" fill="#f3f7f7" stroke="#cbdadb"/>
+    <rect x="38" y="104" width="184" height="30" rx="8" fill="#fff" stroke="#c6d2d3"/>
+    <circle cx="52" cy="119" r="4" fill="#e75a4f"/><circle cx="65" cy="119" r="4" fill="#efb447"/><circle cx="78" cy="119" r="4" fill="#4fbd77"/>
+    <text x="90" y="124" class="mono" font-size="13">chrome://extensions</text>
+    <rect x="45" y="158" width="170" height="64" rx="10" fill="#e9f6f4"/>
+    <text x="65" y="195" class="mono">Developer mode</text>
+    <circle cx="193" cy="189" r="12" fill="#0aa58f"/>
+    <text x="25" y="295" class="txt" fill="#35565a">In Chrome, open:</text>
+    <text x="25" y="328" class="mono">chrome://extensions</text>
+    <text x="25" y="373" class="txt" fill="#35565a">Turn on <tspan font-weight="700">Developer mode</tspan></text>
+    <text x="25" y="400" class="txt" fill="#35565a">in the top-right corner.</text>
+  </g>
+  <g transform="translate(615 110)">
+    <rect width="260" height="445" rx="20" fill="#fff" opacity=".98"/>
+    <circle cx="38" cy="38" r="22" fill="#25d0ae"/><text x="30" y="47" class="num">3</text>
+    <text x="72" y="44" class="step" fill="#17363a">Load Unpacked</text>
+    <rect x="22" y="85" width="216" height="170" rx="12" fill="#f3f7f7" stroke="#cbdadb"/>
+    <rect x="48" y="112" width="164" height="42" rx="9" fill="#0aa58f"/><text x="73" y="138" class="btn">Load unpacked</text>
+    <path d="M62 190h136" stroke="#b8c8ca" stroke-width="4"/>
+    <path d="M72 174h42l10 12h64v42H72z" fill="#ffd56a" stroke="#d3ad3b"/>
+    <text x="25" y="295" class="txt" fill="#35565a">Click <tspan font-weight="700">Load unpacked</tspan>.</text>
+    <text x="25" y="330" class="txt" fill="#35565a">Select the extracted project</text>
+    <text x="25" y="357" class="txt" fill="#35565a">folder that contains:</text>
+    <text x="25" y="392" class="mono">manifest.json</text>
+    <text x="25" y="425" class="txt" fill="#35565a">The extension will appear</text>
+    <text x="25" y="452" class="txt" fill="#35565a">in your extensions list.</text>
+  </g>
+  <g transform="translate(900 110)">
+    <rect width="260" height="445" rx="20" fill="#fff" opacity=".98"/>
+    <circle cx="38" cy="38" r="22" fill="#25d0ae"/><text x="30" y="47" class="num">4</text>
+    <text x="72" y="44" class="step" fill="#17363a">Use It</text>
+    <rect x="22" y="85" width="216" height="170" rx="12" fill="#f3f7f7" stroke="#cbdadb"/>
+    <rect x="40" y="105" width="180" height="105" rx="10" fill="#17363a"/>
+    <circle cx="188" cy="183" r="22" fill="#0aa58f"/><text x="180" y="190" class="btn">↓</text>
+    <rect x="52" y="218" width="150" height="24" rx="6" fill="#fff" stroke="#ccd8da"/>
+    <text x="68" y="235" class="mono" font-size="12">Any Video Downloader</text>
+    <text x="25" y="295" class="txt" fill="#35565a">Open a page containing video.</text>
+    <text x="25" y="328" class="txt" fill="#35565a">Click the floating <tspan font-weight="700">↓</tspan> button.</text>
+    <text x="25" y="361" class="txt" fill="#35565a">Use <tspan font-weight="700">Scan</tspan> if needed, then</text>
+    <text x="25" y="388" class="txt" fill="#35565a">choose an individual video or</text>
+    <text x="25" y="415" class="txt" fill="#35565a"><tspan font-weight="700">Download All</tspan>.</text>
+  </g>
+</svg>

@@ -8,11 +8,11 @@ const HLS_RE = /\.m3u8(?:$|[?#])/i;
 const DASH_RE = /\.mpd(?:$|[?#])/i;
 const REQUEST_FILTER = { urls: ['<all_urls>'], types: ['media', 'xmlhttprequest', 'other'] };
 
-const YT_AUDIO_ITAGS = new Set([139,140,141,171,172,249,250,251,256,258,325,328]);
+const YT_AUDIO_ITAGS = new Set([139,140,141,171,172,249,250,251,256,258,325,328,599,600]);
 const YT_VIDEO_ITAGS = new Set([
   18,22,37,38,59,78,133,134,135,136,137,138,160,242,243,244,245,246,247,248,
   264,266,271,272,278,298,299,302,303,308,313,315,330,331,332,333,334,335,336,
-  337,394,395,396,397,398,399,400,401,571
+  337,394,395,396,397,398,399,400,401,571,694,695,696,697,698,699,700,701,702
 ]);
 
 function decodedUrl(url = '') {
@@ -30,6 +30,15 @@ function youtubeItagKind(url = '') {
     const itag = Number(u.searchParams.get('itag') || 0);
     if (YT_AUDIO_ITAGS.has(itag)) return 'audio';
     if (YT_VIDEO_ITAGS.has(itag)) return 'video';
+
+    const mime = decodedUrl(u.searchParams.get('mime') || u.searchParams.get('type') || '');
+    if (/^audio\//i.test(mime)) return 'audio';
+    if (/^video\//i.test(mime)) return 'video';
+
+    // YouTube frequently introduces new video-only itags. If a googlevideo videoplayback
+    // URL has an itag and it is not one of the known audio-only itags, treat it as video.
+    // This is safer than dropping the stream entirely and fixes newer AV1/VP9 variants.
+    if (itag > 0) return 'video';
   } catch (_) {}
   return '';
 }
@@ -38,13 +47,11 @@ function platformPathKind(url = '') {
   const h = hostname(url);
   const d = decodedUrl(url);
 
-  // Vimeo adaptive CDN paths often expose separate audio/video representations.
   if (/vimeocdn\.com$|\.vimeocdn\.com$|akamaized\.net$|\.akamaized\.net$/i.test(h)) {
     if (/\/(?:sep\/)?audio\//i.test(d) || /audio[_/-](?:init|segment|\d+)/i.test(d)) return 'audio';
     if (/\/(?:sep\/)?video\//i.test(d) || /video[_/-](?:init|segment|\d+)/i.test(d)) return 'video';
   }
 
-  // Meta/Facebook/Instagram CDNs sometimes use extensionless URLs but include media hints.
   if (/fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$/i.test(h)) {
     if (/[?&](?:mime|type)=audio(?:%2F|\/)/i.test(d) || /\/audio\//i.test(d)) return 'audio';
     if (/[?&](?:mime|type)=video(?:%2F|\/)/i.test(d) || /\/video\//i.test(d)) return 'video';
@@ -76,13 +83,11 @@ function canonicalMediaKey(item) {
     const h = u.hostname.toLowerCase();
 
     if (/\.googlevideo\.com$|^googlevideo\.com$/i.test(h)) {
-      const itag = u.searchParams.get('itag') || '';
+      const itag = u.searchParams.get('itag') || item.itag || '';
       return `youtube:${item.kind}:${itag || u.pathname}`;
     }
 
     if (/fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$/i.test(h)) {
-      // Meta range URLs can differ only by byte-window parameters. Keep the newest signed URL,
-      // but treat those range variants as one candidate in the UI.
       const clone = new URL(u.href);
       for (const key of ['bytestart','byteend','range','start','end']) clone.searchParams.delete(key);
       return `meta:${item.kind}:${clone.origin}${clone.pathname}?${clone.searchParams.toString()}`;
@@ -101,7 +106,11 @@ function canonicalMediaKey(item) {
 }
 
 function upsert(tabId, item) {
-  if (!Number.isInteger(tabId) || tabId < 0 || !item?.url || !item.kind) return;
+  if (!Number.isInteger(tabId) || tabId < 0 || !item?.url) return;
+  const kind = item.kind || mediaKind(item.url, item.mime);
+  if (!kind) return;
+  item = { ...item, kind };
+
   const arr = mediaByTab.get(tabId) || [];
   const key = canonicalMediaKey(item);
   const idx = arr.findIndex(x => canonicalMediaKey(x) === key);
@@ -193,6 +202,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'GET_MEDIA_CANDIDATES') {
     const tabId = sender.tab?.id;
     sendResponse({ ok: true, items: Number.isInteger(tabId) ? (mediaByTab.get(tabId) || []) : [] });
+    return;
+  }
+
+  if (msg?.type === 'UPSERT_MEDIA_CANDIDATES') {
+    const tabId = sender.tab?.id;
+    if (Number.isInteger(tabId)) {
+      for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source: item.source || 'player-response' });
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false });
+    }
     return;
   }
 

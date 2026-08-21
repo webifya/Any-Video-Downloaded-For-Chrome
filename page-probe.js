@@ -1,30 +1,34 @@
 (() => {
-  const MEDIA_RE = /\.(?:mp4|m4v|webm|mov|m3u8)(?:$|[?#])/i;
+  const sent = new Set();
+  const RE = /\.(?:mp4|m4v|webm|mov|m3u8)(?:$|[?#])/i;
 
   function collect() {
-    const urls = new Set();
+    const items = [];
+    const push = (url, source) => {
+      if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
+      if (!RE.test(url) && !/m3u8|playlist|manifest/i.test(url)) return;
+      if (sent.has(url)) return;
+      sent.add(url);
+      items.push({ url, source });
+    };
 
-    document.querySelectorAll('video, video source').forEach((el) => {
-      for (const value of [el.currentSrc, el.src, el.getAttribute?.('src')]) {
-        if (value && !value.startsWith('blob:')) urls.add(value);
-      }
+    document.querySelectorAll('video, video source').forEach(el => {
+      push(el.currentSrc, 'dom');
+      push(el.src, 'dom');
+      push(el.getAttribute?.('src'), 'dom');
     });
 
     try {
-      performance.getEntriesByType('resource').forEach((entry) => {
-        const u = entry.name || '';
-        if (MEDIA_RE.test(u) || /m3u8|playlist|manifest/i.test(u)) urls.add(u);
-      });
+      performance.getEntriesByType('resource').forEach(entry => push(entry.name, 'performance'));
     } catch (_) {}
 
-    window.postMessage({
-      source: 'GHL_VIDEO_DOWNLOADER_PROBE',
-      type: 'MEDIA_URLS',
-      urls: [...urls]
-    }, '*');
+    if (items.length) {
+      window.postMessage({ source: 'PAGE_VIDEO_DOWNLOADER_PROBE', type: 'MEDIA_URLS', items }, '*');
+    }
   }
 
   collect();
-  const timer = setInterval(collect, 2500);
-  window.addEventListener('beforeunload', () => clearInterval(timer), { once: true });
+  const observer = new MutationObserver(collect);
+  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  setInterval(collect, 2000);
 })();

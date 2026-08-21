@@ -10,17 +10,17 @@ const REQUEST_FILTER = { urls: ['<all_urls>'], types: ['media', 'xmlhttprequest'
 
 const YT_AUDIO_ITAGS = new Set([139,140,141,171,172,249,250,251,256,258,325,328]);
 const YT_VIDEO_ITAGS = new Set([
-  18,22,37,38,59,78,
-  133,134,135,136,137,138,160,
-  242,243,244,245,246,247,248,
-  264,266,271,272,278,
-  298,299,302,303,308,313,315,
-  330,331,332,333,334,335,336,337,
-  394,395,396,397,398,399,400,401,571
+  18,22,37,38,59,78,133,134,135,136,137,138,160,242,243,244,245,246,247,248,
+  264,266,271,272,278,298,299,302,303,308,313,315,330,331,332,333,334,335,336,
+  337,394,395,396,397,398,399,400,401,571
 ]);
 
 function decodedUrl(url = '') {
   try { return decodeURIComponent(url); } catch (_) { return url; }
+}
+
+function hostname(url = '') {
+  try { return new URL(url).hostname.toLowerCase(); } catch (_) { return ''; }
 }
 
 function youtubeItagKind(url = '') {
@@ -34,9 +34,28 @@ function youtubeItagKind(url = '') {
   return '';
 }
 
+function platformPathKind(url = '') {
+  const h = hostname(url);
+  const d = decodedUrl(url);
+
+  // Vimeo adaptive CDN paths often expose separate audio/video representations.
+  if (/vimeocdn\.com$|\.vimeocdn\.com$|akamaized\.net$|\.akamaized\.net$/i.test(h)) {
+    if (/\/(?:sep\/)?audio\//i.test(d) || /audio[_/-](?:init|segment|\d+)/i.test(d)) return 'audio';
+    if (/\/(?:sep\/)?video\//i.test(d) || /video[_/-](?:init|segment|\d+)/i.test(d)) return 'video';
+  }
+
+  // Meta/Facebook/Instagram CDNs sometimes use extensionless URLs but include media hints.
+  if (/fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$/i.test(h)) {
+    if (/[?&](?:mime|type)=audio(?:%2F|\/)/i.test(d) || /\/audio\//i.test(d)) return 'audio';
+    if (/[?&](?:mime|type)=video(?:%2F|\/)/i.test(d) || /\/video\//i.test(d)) return 'video';
+  }
+
+  return '';
+}
+
 function mediaKind(url = '', mime = '') {
   const m = String(mime).toLowerCase();
-  if (DASH_RE.test(url) || /dash\+xml/.test(m)) return 'dash';
+  if (DASH_RE.test(url) || /(?:application\/)?dash\+xml/.test(m)) return 'dash';
   if (HLS_RE.test(url) || /mpegurl|x-mpegurl/.test(m)) return 'hls';
   if (VIDEO_EXT_RE.test(url) || /^video\//.test(m)) return 'video';
   if (AUDIO_EXT_RE.test(url) || /^audio\//.test(m)) return 'audio';
@@ -45,39 +64,51 @@ function mediaKind(url = '', mime = '') {
   if (ytKind) return ytKind;
 
   const decoded = decodedUrl(url);
-  if (/[?&]mime=video\//i.test(decoded)) return 'video';
-  if (/[?&]mime=audio\//i.test(decoded)) return 'audio';
+  if (/[?&](?:mime|type)=video(?:%2F|\/)/i.test(decoded)) return 'video';
+  if (/[?&](?:mime|type)=audio(?:%2F|\/)/i.test(decoded)) return 'audio';
 
-  // Common adaptive-stream hints used by YouTube/Facebook/Vimeo CDNs.
-  if (/googlevideo\.com\/videoplayback/i.test(url)) {
-    if (/[?&](?:source|requiressl|expire|ei|ip|id|itag)=/i.test(decoded)) return '';
-  }
-  return '';
+  return platformPathKind(url);
 }
 
-function mediaKey(item) {
+function canonicalMediaKey(item) {
   try {
     const u = new URL(item.url);
-    if (/googlevideo\.com$/i.test(u.hostname) || /\.googlevideo\.com$/i.test(u.hostname)) {
-      // Range/rn/rbuf change on every adaptive request; keep the newest usable signed URL per itag/type.
+    const h = u.hostname.toLowerCase();
+
+    if (/\.googlevideo\.com$|^googlevideo\.com$/i.test(h)) {
       const itag = u.searchParams.get('itag') || '';
-      return `yt:${item.kind}:${itag || u.pathname}`;
+      return `youtube:${item.kind}:${itag || u.pathname}`;
     }
-    return item.url;
+
+    if (/fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$/i.test(h)) {
+      // Meta range URLs can differ only by byte-window parameters. Keep the newest signed URL,
+      // but treat those range variants as one candidate in the UI.
+      const clone = new URL(u.href);
+      for (const key of ['bytestart','byteend','range','start','end']) clone.searchParams.delete(key);
+      return `meta:${item.kind}:${clone.origin}${clone.pathname}?${clone.searchParams.toString()}`;
+    }
+
+    if (/vimeocdn\.com$|\.vimeocdn\.com$|akamaized\.net$|\.akamaized\.net$/i.test(h)) {
+      const clone = new URL(u.href);
+      for (const key of ['range','rn','rbuf']) clone.searchParams.delete(key);
+      return `vimeo:${item.kind}:${clone.origin}${clone.pathname}?${clone.searchParams.toString()}`;
+    }
+
+    return `${item.kind}:${u.href}`;
   } catch (_) {
-    return item.url;
+    return `${item.kind}:${item.url}`;
   }
 }
 
 function upsert(tabId, item) {
-  if (!Number.isInteger(tabId) || tabId < 0 || !item?.url) return;
+  if (!Number.isInteger(tabId) || tabId < 0 || !item?.url || !item.kind) return;
   const arr = mediaByTab.get(tabId) || [];
-  const key = mediaKey(item);
-  const idx = arr.findIndex(x => mediaKey(x) === key);
+  const key = canonicalMediaKey(item);
+  const idx = arr.findIndex(x => canonicalMediaKey(x) === key);
   const merged = { ...(idx >= 0 ? arr[idx] : {}), ...item, seenAt: Date.now() };
   if (idx >= 0) arr.splice(idx, 1);
   arr.unshift(merged);
-  mediaByTab.set(tabId, arr.slice(0, 140));
+  mediaByTab.set(tabId, arr.slice(0, 160));
 }
 
 chrome.webRequest.onBeforeRequest.addListener(details => {
@@ -95,11 +126,14 @@ chrome.webRequest.onBeforeRequest.addListener(details => {
 
 chrome.webRequest.onHeadersReceived.addListener(details => {
   if (details.tabId < 0) return;
-  let mime = '', contentLength = 0;
+  let mime = '';
+  let contentLength = 0;
+  let acceptRanges = '';
   for (const header of details.responseHeaders || []) {
     const name = String(header.name || '').toLowerCase();
     if (name === 'content-type') mime = header.value || '';
     else if (name === 'content-length') contentLength = Number(header.value || 0) || 0;
+    else if (name === 'accept-ranges') acceptRanges = header.value || '';
   }
   const kind = mediaKind(details.url, mime);
   if (!kind) return;
@@ -108,6 +142,7 @@ chrome.webRequest.onHeadersReceived.addListener(details => {
     kind,
     mime,
     contentLength,
+    acceptRanges,
     requestType: details.type || '',
     frameId: details.frameId,
     source: 'response'

@@ -32,12 +32,59 @@ function concat(parts) {
   return out;
 }
 
+function safeExt(mime='', kind='video', url='') {
+  const m=String(mime).toLowerCase();
+  try {
+    const p=new URL(url).pathname.toLowerCase();
+    for (const ext of ['.mp4','.webm','.mov','.m4v','.m4a','.aac','.mp3','.opus','.ogg']) if (p.endsWith(ext)) return ext;
+  } catch (_) {}
+  if (kind==='audio') {
+    if (/webm|opus|ogg/.test(m)) return '.webm';
+    if (/mpeg|mp3/.test(m)) return '.mp3';
+    return '.m4a';
+  }
+  if (/webm/.test(m)) return '.webm';
+  if (/quicktime/.test(m)) return '.mov';
+  return '.mp4';
+}
+
 function saveBlob(bytes, type, filename) {
   const blob = new Blob([bytes], { type });
   const blobUrl = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = blobUrl; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 120000);
+}
+
+async function downloadDirect(url, filenameBase, tabId, mime='', kind='video') {
+  report(tabId,2,'direct',0,0,`Preparing ${kind === 'audio' ? 'audio' : 'video'} download…`);
+  const r=await fetchWithRetry(url, kind === 'audio' ? 'audio stream' : 'video stream', 1);
+  const responseType=(r.headers.get('content-type')||mime||'').toLowerCase();
+  if (/text\/|application\/(?:json|xml)/.test(responseType)) throw new Error(`Media server returned ${responseType || 'a non-media response'} instead of the video file.`);
+  const expected=Number(r.headers.get('content-length')||0)||0;
+  const reader=r.body?.getReader?.();
+  const chunks=[]; let received=0;
+  if (reader) {
+    while (true) {
+      const {done,value}=await reader.read();
+      if (done) break;
+      if (value?.byteLength) { chunks.push(value); received += value.byteLength; }
+      if (expected > 0) {
+        const pct=Math.max(3,Math.min(96,Math.round(received/expected*94)+2));
+        report(tabId,pct,'direct',received,expected,`Downloading ${kind === 'audio' ? 'audio' : 'video'}… ${pct}%`);
+      }
+    }
+  } else {
+    const bytes=new Uint8Array(await r.arrayBuffer()); chunks.push(bytes); received=bytes.byteLength;
+  }
+  if (received < 16384) throw new Error('The media URL returned only a tiny/expired response. Play the video again and click Scan to refresh the stream URL.');
+  const finalMime=responseType && !/octet-stream/.test(responseType) ? responseType : (mime || (kind==='audio'?'audio/mp4':'video/mp4'));
+  const ext=safeExt(finalMime,kind,url);
+  const filename=`${filenameBase}${kind==='audio'?' - audio':''}${ext}`;
+  report(tabId,98,'save',received,expected||received,'Saving file… 98%');
+  saveBlob(concat(chunks),finalMime,filename);
+  report(tabId,100,'done',received,expected||received,`Complete — ${filename}`);
+  return {ok:true,message:`Downloaded ${filename}`};
 }
 
 // ---------- HLS ----------
@@ -168,8 +215,11 @@ async function downloadDash(url, filenameBase, tabId) {
 
 chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
   if (msg?.target!=='offscreen') return;
-  const fn=msg.type==='DOWNLOAD_HLS'?downloadHls:msg.type==='DOWNLOAD_DASH'?downloadDash:null;
-  if (!fn) return;
-  fn(msg.url,msg.filenameBase,msg.tabId).then(sendResponse).catch(err=>{ report(msg.tabId,0,'error',0,0,`Download failed: ${err.message||String(err)}`); sendResponse({ok:false,error:err.message||String(err)}); });
+  let promise=null;
+  if (msg.type==='DOWNLOAD_HLS') promise=downloadHls(msg.url,msg.filenameBase,msg.tabId);
+  else if (msg.type==='DOWNLOAD_DASH') promise=downloadDash(msg.url,msg.filenameBase,msg.tabId);
+  else if (msg.type==='DOWNLOAD_DIRECT') promise=downloadDirect(msg.url,msg.filenameBase,msg.tabId,msg.mime,msg.kind);
+  if (!promise) return;
+  promise.then(sendResponse).catch(err=>{ report(msg.tabId,0,'error',0,0,`Download failed: ${err.message||String(err)}`); sendResponse({ok:false,error:err.message||String(err)}); });
   return true;
 });

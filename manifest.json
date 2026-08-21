@@ -1,17 +1,30 @@
 {
   "manifest_version": 3,
   "name": "Any Video Downloader",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Detect and download accessible videos from web pages, including direct files, unencrypted HLS, and DASH/adaptive streams.",
   "permissions": ["downloads", "offscreen", "webRequest"],
   "host_permissions": ["<all_urls>"],
   "background": {"service_worker": "service-worker.js"},
-  "content_scripts": [{
-    "matches": ["<all_urls>"],
-    "js": ["content.js"],
-    "css": ["content.css"],
-    "run_at": "document_idle"
-  }],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube-listener.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["youtube-probe.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ],
   "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'self';"},
   "icons": {"16":"icons/icon16.png","32":"icons/icon32.png","48":"icons/icon48.png","128":"icons/icon128.png"}
 }

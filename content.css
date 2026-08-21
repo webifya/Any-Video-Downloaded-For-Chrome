@@ -1,7 +1,26 @@
-#page-video-downloader-panel {
+#page-video-downloader-launcher {
   position: fixed;
   right: 18px;
   bottom: 18px;
+  z-index: 2147483646;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  background: #0ea58f;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  cursor: pointer;
+  font: 700 22px/46px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  text-align: center;
+  padding: 0;
+}
+#page-video-downloader-launcher:hover { filter: brightness(1.05); }
+
+#page-video-downloader-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 74px;
   z-index: 2147483647;
   width: 330px;
   max-height: min(70vh, 620px);
@@ -12,6 +31,7 @@
   border-radius: 14px;
   box-shadow: 0 14px 42px rgba(0,0,0,.36);
   font: 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  display: none;
 }
 #page-video-downloader-panel * { box-sizing: border-box; }
 #page-video-downloader-header {

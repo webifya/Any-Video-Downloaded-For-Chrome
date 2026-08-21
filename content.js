@@ -72,7 +72,6 @@
     let changed = false;
     try {
       const entries = performance.getEntriesByType('resource');
-      // Inspect only the newest entries. Re-scanning thousands of performance entries was a major source of slowdown.
       const start = Math.max(0, entries.length - 200);
       for (let i = start; i < entries.length; i++) {
         const url = entries[i]?.name || '';
@@ -138,8 +137,8 @@
     const button = document.createElement('button');
     button.id = 'page-video-downloader-launcher';
     button.type = 'button';
-    button.title = 'Video Downloader';
-    button.setAttribute('aria-label', 'Open Video Downloader');
+    button.title = 'Any Video Downloader';
+    button.setAttribute('aria-label', 'Open Any Video Downloader');
     button.textContent = '⬇';
     button.addEventListener('click', async event => {
       event.preventDefault();
@@ -158,7 +157,7 @@
     panel.id = 'page-video-downloader-panel';
     panel.innerHTML = `
       <div id="page-video-downloader-header">
-        <span>Video Downloader</span>
+        <span>Any Video Downloader</span>
         <button id="page-video-downloader-close" type="button" aria-label="Close">×</button>
       </div>
       <div id="page-video-downloader-body">
@@ -248,7 +247,6 @@
       const r = v.getBoundingClientRect();
       return r.width > 60 && r.height > 40;
     });
-    // Deep scan is user initiated. Limit auto-start work to avoid freezing pages with many embedded players.
     for (const video of videos.slice(0, 12)) {
       const wasPaused = video.paused;
       const wasMuted = video.muted;

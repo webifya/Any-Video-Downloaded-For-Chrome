@@ -7,24 +7,31 @@
 ## Features
 
 - Works on general web pages, not only GoHighLevel.
-- Detects HTML5 video sources.
-- Detects direct MP4, WebM, MOV, and M4V files.
+- Detects HTML5 video sources and direct MP4, WebM, MOV, and M4V files.
 - Detects unencrypted HLS (`.m3u8`) streams.
 - Supports custom and embedded video players through network media detection.
-- Provides individual **Download** buttons.
-- Provides **Download All** for all detected downloadable videos on the current page.
+- Supports JavaScript/SPA lesson pages where the URL, lesson title, and video change without a full browser refresh.
+- Automatically clears the previous lesson's cached video when a new lesson/page is detected.
+- Uses the current page or lesson title as the downloaded filename whenever possible.
+- Provides individual **Download** buttons and **Download All**.
 - Includes **Scan** for lazy-loaded or custom video players.
-- Can briefly start visible HTML5 videos muted during a user-requested deep scan so their streams become detectable.
-- Uses nearby headings/page titles to create useful filenames when possible.
 - Shows HLS segment download progress.
-- Uses a lightweight, on-demand architecture to reduce impact on page loading and video playback.
+- Uses a lightweight, on-demand architecture to reduce impact on page loading and playback.
 - Does not use remote executable code.
 
 ## Current version
 
-**v2.1.2**
+**v2.1.3**
 
-This version improves compatibility with custom and embedded video players. The floating launcher is available even when a website does not expose a normal top-level `<video>` element, while media scanning remains user initiated to keep page performance fast.
+### v2.1.3 fixes
+
+- Fixed stale-video downloads on course sites that switch lessons using JavaScript without reloading the page.
+- Detects meaningful SPA changes from URL, current lesson title, selected lesson state, and video source changes.
+- Clears both the page candidate list and background media cache when the lesson changes.
+- Rescans only after the new lesson/player has had time to load.
+- Fixes generic filenames such as `Video.mp4` by resolving the filename from the current selected lesson, visible H1/H2, breadcrumb, or document title.
+- Re-resolves the lesson/page title again at download time so a stale title cannot be reused after navigation.
+- Keeps the launcher available on custom/embedded-player pages.
 
 ## Install on Google Chrome
 
@@ -34,11 +41,11 @@ Until the extension is available directly from the Chrome Web Store, you can ins
 
 Click the green **Code** button near the top of this GitHub repository, then choose **Download ZIP**.
 
-Extract the downloaded ZIP file to a permanent folder on your computer. Do not delete that folder after installation because Chrome loads the extension from it.
+Extract the ZIP to a permanent folder on your computer.
 
 ### 2. Open Chrome Extensions
 
-In Google Chrome, enter this address in the address bar:
+Enter this in Chrome's address bar:
 
 ```text
 chrome://extensions
@@ -48,61 +55,74 @@ Turn on **Developer mode** in the upper-right corner.
 
 ### 3. Load the extension
 
-Click **Load unpacked**.
-
-Select the extracted project folder containing `manifest.json`.
+Click **Load unpacked** and choose the extracted folder containing `manifest.json`.
 
 Chrome should now show **Any Video Downloader** in your installed extensions.
 
-### 4. Optional: pin the extension
+### 4. After an update
 
-Click Chrome's **Extensions** puzzle-piece icon and pin **Any Video Downloader** if you want quick access to it.
+When you replace/update the extension files:
 
-> After updating the source code or replacing the extension files, return to `chrome://extensions` and click the **Reload** button for Any Video Downloader.
+1. Go back to `chrome://extensions`.
+2. Click **Reload** on Any Video Downloader.
+3. Fully refresh the video/course page.
 
 ## How to use
 
 ![Any Video Downloader usage guide](docs/usage-guide.svg)
 
 1. Open a webpage containing the video you want to save.
-2. Start/play the video if the website lazy-loads its video stream.
+2. If necessary, play the video briefly so the website requests its real media stream.
 3. Click the floating **↓** Any Video Downloader launcher.
-4. The extension scans the page for accessible video media.
-5. If nothing appears, click **Scan**. The deeper scan can briefly start visible HTML5 players muted to help reveal lazy-loaded streams.
-6. Click **Download** next to one detected video, or click **Download All** to process every detected downloadable video on the current page.
-7. For HLS streams, the extension displays segment-download progress while preparing the file.
+4. The panel shows detected downloadable media for the **current** page/lesson.
+5. If nothing appears, click **Scan**.
+6. Click **Download** for one video or **Download All** for all detected videos on that page.
+7. For HLS streams, download/segment progress is displayed in the panel.
 
-## If no download button appears
+### Course sites / JavaScript lesson navigation
 
-Some websites use custom players, nested frames, or dynamically loaded media. With v2.1.2 the launcher is designed to remain available on these pages, but if Chrome is still running an older unpacked version:
+If a course changes from Lesson 1 to Lesson 2 without a full page reload, v2.1.3 detects that transition automatically. The previous lesson media is discarded, the new lesson media is detected, and the downloaded filename should use the new lesson title.
 
-1. Open `chrome://extensions`.
-2. Find **Any Video Downloader**.
-3. Click **Reload**.
-4. Return to the video page and perform a full refresh (`Ctrl+Shift+R` on Windows/Linux or `Cmd+Shift+R` on macOS).
-5. Play the video for a few seconds and click **Scan**.
+Example:
+
+```text
+Welcome & Overview.mp4
+Warnings & Disclaimers.mp4
+Core Principles.mp4
+```
+
+rather than generic names such as:
+
+```text
+Video.mp4
+```
+
+## If the new lesson is not detected
+
+1. Wait about one second after clicking the new lesson.
+2. Play the new lesson briefly if the player lazy-loads its stream.
+3. Open Any Video Downloader and click **Scan**.
+4. If Chrome is still running an older unpacked build, go to `chrome://extensions`, click **Reload**, and fully refresh the course page.
 
 ## Performance design
 
 The extension is intentionally designed to avoid slowing video-heavy pages:
 
-- No continuous 2-second/2.5-second page scanning loops.
+- No continuous 2-second/2.5-second full-page scanning loops.
 - No continuously injected resource-probe script.
 - No automatic deep scan when a page loads.
 - Heavy media/network scanning happens when the user opens the downloader or chooses **Scan / Download All**.
-- DOM observation is limited and debounced.
-- Performance API inspection is capped instead of repeatedly walking an unlimited resource history.
+- SPA detection is debounced instead of continuously rescanning resources.
+- Performance API inspection is capped instead of walking unlimited resource history.
 - Background `webRequest` detection uses a bounded per-tab media cache.
 - Deep-scan autoplay is user initiated and limited to a small number of visible players.
 
 ## Chrome permissions
 
-The extension currently uses:
-
-- `downloads` — saves the video selected by the user to Chrome's Downloads folder.
+- `downloads` — saves videos selected by the user to Chrome's Downloads folder.
 - `offscreen` — assembles user-requested unencrypted HLS segments into a local downloadable media file.
 - `webRequest` — detects media/HLS requests generated by webpage video players.
-- `<all_urls>` host access — allows the extension to work across websites and retrieve video media that may be hosted on a separate CDN/domain from the webpage itself.
+- `<all_urls>` — lets the extension work across websites and media/CDN domains.
 
 ## Chrome Web Store single purpose
 
@@ -110,30 +130,10 @@ The extension currently uses:
 
 ## Limitations
 
-Any Video Downloader does **not** attempt to bypass:
+Any Video Downloader does **not** attempt to bypass DRM, encrypted HLS, paywalls, subscription/access controls, authentication restrictions, or website security controls.
 
-- DRM-protected video
-- encrypted HLS streams
-- paywalls
-- subscription/access controls
-- authentication restrictions
-- website security controls
-
-Some streaming platforms intentionally use DRM or protected media delivery and therefore will not be downloadable with this extension.
-
-Use this extension only for videos you own or content you have permission to save for offline use.
+Use it only for videos you own or content you have permission to save for offline use.
 
 ## Repository
 
 `webifya/Any-Video-Downloaded-For-Chrome`
-
-## Development
-
-After editing the extension locally:
-
-1. Save your changes.
-2. Open `chrome://extensions`.
-3. Click **Reload** on Any Video Downloader.
-4. Refresh the webpage you are testing.
-
-For Chrome Web Store updates, increment the version in `manifest.json` before uploading a new package.

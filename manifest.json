@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Video Downloader for Web Pages",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Detect and download accessible videos from the current web page, including direct video files and unencrypted HLS streams.",
   "permissions": [
     "downloads",
@@ -20,12 +20,6 @@
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["page-probe.js"],
-      "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {

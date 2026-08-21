@@ -1,43 +1,139 @@
-# Any Video Downloader v2.1.1
+# Any Video Downloader
 
-Chrome Manifest V3 extension that detects accessible videos on the current page and lets the user download one video or all detected videos.
+**Any Video Downloader** is a lightweight Chrome Manifest V3 extension that detects accessible video media on web pages and lets you download individual videos or all detected videos from the current page.
 
-## Brand
-- Product name: **Any Video Downloader**
-- Repository: `webifya/Any-Video-Downloaded-For-Chrome`
+![Any Video Downloader install guide](docs/install-guide.svg)
+
+## Features
+
+- Works on general web pages, not only GoHighLevel.
+- Detects HTML5 video sources.
+- Detects direct MP4, WebM, MOV, and M4V files.
+- Detects unencrypted HLS (`.m3u8`) streams.
+- Supports custom and embedded video players through network media detection.
+- Provides individual **Download** buttons.
+- Provides **Download All** for all detected downloadable videos on the current page.
+- Includes **Scan** for lazy-loaded or custom video players.
+- Can briefly start visible HTML5 videos muted during a user-requested deep scan so their streams become detectable.
+- Uses nearby headings/page titles to create useful filenames when possible.
+- Shows HLS segment download progress.
+- Uses a lightweight, on-demand architecture to reduce impact on page loading and video playback.
+- Does not use remote executable code.
+
+## Current version
+
+**v2.1.2**
+
+This version improves compatibility with custom and embedded video players. The floating launcher is available even when a website does not expose a normal top-level `<video>` element, while media scanning remains user initiated to keep page performance fast.
+
+## Install on Google Chrome
+
+Until the extension is available directly from the Chrome Web Store, you can install it manually from this repository.
+
+### 1. Download the extension
+
+Click the green **Code** button near the top of this GitHub repository, then choose **Download ZIP**.
+
+Extract the downloaded ZIP file to a permanent folder on your computer. Do not delete that folder after installation because Chrome loads the extension from it.
+
+### 2. Open Chrome Extensions
+
+In Google Chrome, enter this address in the address bar:
+
+```text
+chrome://extensions
+```
+
+Turn on **Developer mode** in the upper-right corner.
+
+### 3. Load the extension
+
+Click **Load unpacked**.
+
+Select the extracted project folder containing `manifest.json`.
+
+Chrome should now show **Any Video Downloader** in your installed extensions.
+
+### 4. Optional: pin the extension
+
+Click Chrome's **Extensions** puzzle-piece icon and pin **Any Video Downloader** if you want quick access to it.
+
+> After updating the source code or replacing the extension files, return to `chrome://extensions` and click the **Reload** button for Any Video Downloader.
+
+## How to use
+
+![Any Video Downloader usage guide](docs/usage-guide.svg)
+
+1. Open a webpage containing the video you want to save.
+2. Start/play the video if the website lazy-loads its video stream.
+3. Click the floating **↓** Any Video Downloader launcher.
+4. The extension scans the page for accessible video media.
+5. If nothing appears, click **Scan**. The deeper scan can briefly start visible HTML5 players muted to help reveal lazy-loaded streams.
+6. Click **Download** next to one detected video, or click **Download All** to process every detected downloadable video on the current page.
+7. For HLS streams, the extension displays segment-download progress while preparing the file.
+
+## If no download button appears
+
+Some websites use custom players, nested frames, or dynamically loaded media. With v2.1.2 the launcher is designed to remain available on these pages, but if Chrome is still running an older unpacked version:
+
+1. Open `chrome://extensions`.
+2. Find **Any Video Downloader**.
+3. Click **Reload**.
+4. Return to the video page and perform a full refresh (`Ctrl+Shift+R` on Windows/Linux or `Cmd+Shift+R` on macOS).
+5. Play the video for a few seconds and click **Scan**.
 
 ## Performance design
 
-The extension uses a lazy/on-demand architecture to avoid slowing video pages:
+The extension is intentionally designed to avoid slowing video-heavy pages:
 
 - No continuous 2-second/2.5-second page scanning loops.
-- No injected page probe script.
-- No automatic full downloader panel on page load.
-- A small launcher appears only when an HTML5 video is present.
-- Full media/network scanning happens when the user opens the downloader or clicks **Scan / Download All**.
-- Mutation observation is limited to newly-added video/source elements and is debounced.
-- Performance API inspection is capped to the newest 200 resource entries.
-- Background webRequest listeners cache a limited number of media candidates per tab.
-- Deep scan auto-play is user-initiated and capped to 12 visible players.
+- No continuously injected resource-probe script.
+- No automatic deep scan when a page loads.
+- Heavy media/network scanning happens when the user opens the downloader or chooses **Scan / Download All**.
+- DOM observation is limited and debounced.
+- Performance API inspection is capped instead of repeatedly walking an unlimited resource history.
+- Background `webRequest` detection uses a bounded per-tab media cache.
+- Deep-scan autoplay is user initiated and limited to a small number of visible players.
 
-## Features
-- Works on general web pages, not only GoHighLevel.
-- Detects HTML5 video sources, direct MP4/WebM/MOV/M4V files, and unencrypted HLS (.m3u8) streams.
-- Lightweight floating launcher with **Download All**, **Scan**, and individual download buttons.
-- Can briefly start HTML5 videos muted during a user-requested deep scan so lazy-loaded streams become visible.
-- Uses nearby headings/page title to create filenames.
-- Shows HLS segment download progress.
-- Rejects encrypted/DRM-protected HLS streams.
-- No remote executable code.
+## Chrome permissions
+
+The extension currently uses:
+
+- `downloads` — saves the video selected by the user to Chrome's Downloads folder.
+- `offscreen` — assembles user-requested unencrypted HLS segments into a local downloadable media file.
+- `webRequest` — detects media/HLS requests generated by webpage video players.
+- `<all_urls>` host access — allows the extension to work across websites and retrieve video media that may be hosted on a separate CDN/domain from the webpage itself.
 
 ## Chrome Web Store single purpose
-Detect and download accessible video media from the web page the user is currently viewing for authorized offline use.
 
-## Permissions
-- `downloads`: save direct video files selected by the user.
-- `offscreen`: assemble unencrypted HLS segments into a local downloadable file.
-- `webRequest`: detect media requests made by page video players.
-- `<all_urls>` host permission: required because the extension is intentionally designed to work across websites and video files/CDN streams may be hosted on different origins.
+> Detect and download accessible video media from the web page the user is currently viewing for authorized offline use.
 
 ## Limitations
-This extension does not bypass DRM, encrypted HLS, subscription controls, paywalls, or website access controls. Users should download only content they own or have permission to save.
+
+Any Video Downloader does **not** attempt to bypass:
+
+- DRM-protected video
+- encrypted HLS streams
+- paywalls
+- subscription/access controls
+- authentication restrictions
+- website security controls
+
+Some streaming platforms intentionally use DRM or protected media delivery and therefore will not be downloadable with this extension.
+
+Use this extension only for videos you own or content you have permission to save for offline use.
+
+## Repository
+
+`webifya/Any-Video-Downloaded-For-Chrome`
+
+## Development
+
+After editing the extension locally:
+
+1. Save your changes.
+2. Open `chrome://extensions`.
+3. Click **Reload** on Any Video Downloader.
+4. Refresh the webpage you are testing.
+
+For Chrome Web Store updates, increment the version in `manifest.json` before uploading a new package.

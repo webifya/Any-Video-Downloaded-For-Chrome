@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Any Video Downloader",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Detect and download accessible videos from web pages, including direct video files and unencrypted HLS streams.",
   "permissions": [
     "downloads",
@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js", "launcher-compat.js"],
+      "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }

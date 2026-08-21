@@ -1,43 +1,42 @@
-#ghl-video-downloader-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 12px;
-  margin: 12px 0 16px;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-#ghl-video-download-btn {
-  appearance: none;
-  border: 0;
-  border-radius: 8px;
-  padding: 10px 16px;
-  background: #155eef;
+#page-video-downloader-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483647;
+  width: 330px;
+  max-height: min(70vh, 620px);
+  overflow: hidden;
+  background: #0c1f22;
   color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgba(16,24,40,.08);
-  transition: transform .12s ease, opacity .12s ease;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  box-shadow: 0 14px 42px rgba(0,0,0,.36);
+  font: 13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
 }
-#ghl-video-download-btn:hover { transform: translateY(-1px); }
-#ghl-video-download-btn:disabled { opacity: .6; cursor: wait; transform: none; }
-#ghl-video-download-status { color: #667085; font-size: 13px; min-width: 240px; }
-#ghl-video-download-progress-row { display:none; flex-basis:100%; align-items:center; gap:10px; max-width:720px; }
-#ghl-video-download-progress { flex:1; height:10px; accent-color:#155eef; }
-#ghl-video-download-percent { width:52px; text-align:right; font-size:13px; font-weight:700; color:#344054; }
-#ghl-video-download-all-btn,
-#ghl-video-download-cancel-btn {
-  appearance: none;
-  border: 1px solid #d0d5dd;
-  border-radius: 8px;
-  padding: 10px 14px;
-  background: #fff;
-  color: #344054;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
+#page-video-downloader-panel * { box-sizing: border-box; }
+#page-video-downloader-header {
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:12px 14px; background:#10383a; font-weight:700;
 }
-#ghl-video-download-all-btn:hover,
-#ghl-video-download-cancel-btn:hover { background: #f9fafb; }
-#ghl-video-download-cancel-btn { color: #b42318; border-color: #fecdca; }
-#ghl-video-batch-status { flex-basis:100%; color:#475467; font-size:13px; font-weight:600; }
+#page-video-downloader-close {
+  border:0; background:transparent; color:#fff; cursor:pointer; font-size:18px; line-height:1;
+}
+#page-video-downloader-body { padding:12px; overflow:auto; max-height:calc(min(70vh,620px) - 48px); }
+#page-video-downloader-actions { display:flex; gap:8px; margin-bottom:10px; }
+#page-video-downloader-actions button,
+.pvd-item button {
+  appearance:none; border:0; border-radius:8px; cursor:pointer; font-weight:700;
+  padding:9px 11px; background:#0ea58f; color:#fff;
+}
+#page-video-downloader-actions button.secondary { background:#31474b; }
+#page-video-downloader-actions button:disabled,
+.pvd-item button:disabled { opacity:.55; cursor:not-allowed; }
+#page-video-downloader-summary { color:#c7d8da; margin-bottom:10px; }
+#page-video-downloader-progress-wrap { display:none; margin:8px 0 12px; }
+#page-video-downloader-progress { width:100%; height:10px; }
+#page-video-downloader-status { display:block; color:#c7d8da; margin-top:5px; }
+.pvd-item { padding:10px 0; border-top:1px solid rgba(255,255,255,.1); }
+.pvd-item:first-child { border-top:0; }
+.pvd-title { font-weight:700; overflow-wrap:anywhere; }
+.pvd-meta { color:#9fb5b8; font-size:12px; margin:3px 0 7px; overflow-wrap:anywhere; }
+.pvd-empty { color:#9fb5b8; padding:8px 0; }

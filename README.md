@@ -11,6 +11,7 @@
 - Detects unencrypted HLS (`.m3u8`) streams.
 - Detects DASH / MPEG-DASH (`.mpd`) manifests.
 - Detects extensionless adaptive video/audio requests used by sites such as YouTube, Facebook, Vimeo, and similar players when those requests are visible to Chrome.
+- Recognizes YouTube `googlevideo.com/videoplayback` adaptive streams using MIME hints and known YouTube `itag` values.
 - Supports custom and embedded players through network media detection.
 - Supports JavaScript/SPA lesson pages where the URL, lesson title, and video change without a full browser refresh.
 - Clears the previous lesson's cached media when a new lesson/page is detected.
@@ -23,28 +24,26 @@
 
 ## Current version
 
-**v2.2.0**
+**v2.2.1**
 
-### v2.2.0 adaptive-stream upgrade
+### v2.2.1 YouTube adaptive-stream fix
 
-- Added DASH / MPD manifest detection.
-- Added basic unencrypted DASH `SegmentTemplate` / `SegmentTimeline` downloading.
-- Chooses the highest detected DASH video representation and highest detected audio representation.
-- Detects separate adaptive audio streams as well as video streams.
-- Better recognition of signed/extensionless media URLs used by large video platforms.
-- Keeps v2.1.3 SPA lesson-switch detection and title-based filenames.
-- HLS functionality remains unchanged.
+- Fixed a case where YouTube pages could show only an **Audio stream** option.
+- Added explicit YouTube `itag` classification for common video-only, audio-only, and progressive stream formats.
+- Added stronger recognition for `googlevideo.com/videoplayback` URLs even when the URL does not expose a normal `.mp4`/`.webm` file extension.
+- Deduplicates YouTube range requests by stream/itag while retaining the newest signed URL, so the panel does not fill with dozens of partial range requests.
+- Keeps the existing HLS, DASH, SPA lesson-switching, and page-title filename behavior.
 
-### Important DASH note
+### Important adaptive-stream note
 
-Many large streaming sites deliver video and audio as **separate adaptive tracks**. Any Video Downloader v2.2.0 can detect/download those accessible tracks, but when a DASH source contains separate video and audio representations it currently saves them as two files:
+YouTube and several other large streaming platforms commonly deliver **video and audio as separate adaptive tracks**. When both tracks are detected, Any Video Downloader can expose both downloads, for example:
 
 ```text
-Lesson or Page Name.mp4
-Lesson or Page Name - audio.m4a
+Video Title.mp4
+Video Title - audio.m4a
 ```
 
-A true browser-side MP4 muxer is not bundled yet. The extension does not download remote executable code or call an external conversion server.
+The video-only file may not contain sound. A true browser-side MP4 muxer is not bundled yet, and the extension does not download remote executable code or use an external conversion server.
 
 Because large platforms frequently change their playback delivery, support for YouTube, Vimeo, Facebook, Instagram, and similar sites is best-effort rather than guaranteed. DRM/protected streams are not bypassed.
 
@@ -92,6 +91,18 @@ Chrome should now show **Any Video Downloader**.
 6. Click **Download** for one detected item or **Download All**.
 7. HLS/DASH segment progress appears in the panel.
 
+### YouTube testing
+
+For YouTube, let the video play for a few seconds before opening the downloader or clicking **Scan**. Modern YouTube playback usually requests separate adaptive video and audio tracks. v2.2.1 should identify both when Chrome exposes those requests.
+
+If you still see only audio after updating:
+
+1. Open `chrome://extensions`.
+2. Click **Reload** on Any Video Downloader.
+3. Fully refresh the YouTube watch page.
+4. Start the video and let it play for 3–5 seconds.
+5. Open Any Video Downloader and click **Scan**.
+
 ### Course sites / JavaScript navigation
 
 When a course switches lessons without a normal page reload, the extension watches the current URL/title/selected lesson/video source. It clears the old media cache and detects the new lesson stream.
@@ -112,7 +123,7 @@ Video.mp4
 
 ## Platform notes
 
-**YouTube:** Adaptive video/audio requests can be detected when exposed to the extension. YouTube commonly separates video and audio, so v2.2.0 may provide separate files rather than a single muxed MP4. Protected/DRM content is not supported.
+**YouTube:** v2.2.1 explicitly detects common `googlevideo` video and audio adaptive streams. Most high-quality YouTube formats use separate video and audio files, so a video download may be video-only until local muxing is added. Protected/DRM content is not supported.
 
 **Vimeo:** Direct MP4, HLS, and unencrypted DASH delivery can work depending on the video's configuration and permissions.
 

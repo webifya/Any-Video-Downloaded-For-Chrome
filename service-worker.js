@@ -2,6 +2,10 @@ const OFFSCREEN_URL = 'offscreen.html';
 let creatingOffscreen;
 const mediaByTab = new Map();
 const contextByTab = new Map();
+const loadedTabs = new Set();
+const restorePromises = new Map();
+const persistTimers = new Map();
+const SESSION_PREFIX = 'avd-tab-';
 
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|mov)(?:$|[?#])/i;
 const AUDIO_EXT_RE = /\.(?:m4a|aac|mp3|opus|ogg)(?:$|[?#])/i;
@@ -85,7 +89,46 @@ function canonicalMediaKey(item) {
   } catch (_) { return `${item.kind}:${item.url}`; }
 }
 
-function upsert(tabId, incoming) {
+function sessionKey(tabId) { return `${SESSION_PREFIX}${tabId}`; }
+function compactItem(item) {
+  return {
+    url:item.url, originalUrl:item.originalUrl || '', kind:item.kind, mime:item.mime || '', source:item.source || '',
+    contentLength:Number(item.contentLength || 0), totalLength:Number(item.totalLength || 0), width:Number(item.width || 0),
+    height:Number(item.height || 0), bitrate:Number(item.bitrate || 0), qualityLabel:item.qualityLabel || '', itag:Number(item.itag || 0),
+    hasAudio:item.hasAudio, hasVideo:item.hasVideo, isProgressive:!!item.isProgressive, seenAt:Number(item.seenAt || Date.now())
+  };
+}
+function queuePersist(tabId) {
+  if (!chrome.storage?.session || !Number.isInteger(tabId)) return;
+  clearTimeout(persistTimers.get(tabId));
+  persistTimers.set(tabId, setTimeout(() => {
+    persistTimers.delete(tabId);
+    const value = { context:contextByTab.get(tabId) || '', items:(mediaByTab.get(tabId) || []).slice(0, 60).map(compactItem) };
+    chrome.storage.session.set({ [sessionKey(tabId)]:value }).catch(() => {});
+  }, 150));
+}
+async function restoreTab(tabId) {
+  if (loadedTabs.has(tabId) || !chrome.storage?.session) return;
+  if (restorePromises.has(tabId)) return restorePromises.get(tabId);
+  const restoring = (async () => {
+    try {
+      const value = (await chrome.storage.session.get(sessionKey(tabId)))?.[sessionKey(tabId)];
+      if (value?.context) contextByTab.set(tabId, value.context);
+      if (!mediaByTab.has(tabId) && Array.isArray(value?.items)) {
+        for (const item of value.items.slice(0, 60).reverse()) upsert(tabId, item, false);
+      }
+    } catch (_) {}
+    finally { loadedTabs.add(tabId); restorePromises.delete(tabId); }
+  })();
+  restorePromises.set(tabId, restoring);
+  return restoring;
+}
+async function upsertAfterRestore(tabId, incoming) {
+  await restoreTab(tabId);
+  upsert(tabId, incoming);
+}
+
+function upsert(tabId, incoming, persist = true) {
   if (!Number.isInteger(tabId) || tabId < 0 || !incoming?.url) return;
   const kind = incoming.kind || mediaKind(incoming.url, incoming.mime);
   if (!kind) return;
@@ -111,12 +154,14 @@ function upsert(tabId, incoming) {
   if (idx >= 0) arr.splice(idx, 1);
   arr.unshift(merged);
   mediaByTab.set(tabId, arr.slice(0, 180));
+  loadedTabs.add(tabId);
+  if (persist) queuePersist(tabId);
 }
 
 chrome.webRequest.onBeforeRequest.addListener(details => {
   if (details.tabId < 0) return;
   const kind = mediaKind(details.url); if (!kind) return;
-  upsert(details.tabId, { url: details.url, kind, requestType: details.type || '', frameId: details.frameId, source: 'request' });
+  upsertAfterRestore(details.tabId, { url: details.url, kind, requestType: details.type || '', frameId: details.frameId, source: 'request' }).catch(() => {});
 }, REQUEST_FILTER);
 
 chrome.webRequest.onHeadersReceived.addListener(details => {
@@ -134,12 +179,19 @@ chrome.webRequest.onHeadersReceived.addListener(details => {
     }
   }
   const kind = mediaKind(details.url, mime); if (!kind) return;
-  upsert(details.tabId, { url: details.url, kind, mime, contentLength, totalLength, contentDisposition, requestType: details.type || '', frameId: details.frameId, source: 'response' });
+  upsertAfterRestore(details.tabId, { url: details.url, kind, mime, contentLength, totalLength, contentDisposition, requestType: details.type || '', frameId: details.frameId, source: 'response' }).catch(() => {});
 }, REQUEST_FILTER, ['responseHeaders']);
 
-chrome.tabs.onRemoved.addListener(tabId => { mediaByTab.delete(tabId); contextByTab.delete(tabId); });
+chrome.tabs.onRemoved.addListener(tabId => {
+  mediaByTab.delete(tabId); contextByTab.delete(tabId); loadedTabs.delete(tabId); restorePromises.delete(tabId);
+  clearTimeout(persistTimers.get(tabId)); persistTimers.delete(tabId);
+  chrome.storage?.session?.remove(sessionKey(tabId)).catch(() => {});
+});
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === 'loading') { mediaByTab.delete(tabId); contextByTab.delete(tabId); }
+  if (info.status === 'loading') {
+    mediaByTab.delete(tabId); contextByTab.delete(tabId); loadedTabs.add(tabId);
+    chrome.storage?.session?.remove(sessionKey(tabId)).catch(() => {});
+  }
 });
 
 async function ensureOffscreen() {
@@ -181,27 +233,33 @@ function serializeMedia(item = {}) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'GET_MEDIA_CANDIDATES') {
-    const tabId = sender.tab?.id; sendResponse({ ok: true, items: Number.isInteger(tabId) ? (mediaByTab.get(tabId) || []) : [] }); return;
+    const tabId = sender.tab?.id;
+    (async () => { if (Number.isInteger(tabId)) await restoreTab(tabId); sendResponse({ ok:true, items:Number.isInteger(tabId) ? (mediaByTab.get(tabId) || []) : [] }); })();
+    return true;
   }
   if (msg?.type === 'UPSERT_MEDIA_CANDIDATES') {
     const tabId = sender.tab?.id;
-    if (Number.isInteger(tabId)) { for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source: item.source || 'player-response' }); sendResponse({ ok: true }); }
-    else sendResponse({ ok: false });
-    return;
+    (async () => {
+      if (!Number.isInteger(tabId)) { sendResponse({ ok:false }); return; }
+      await restoreTab(tabId);
+      for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source:item.source || 'player-response' });
+      sendResponse({ ok:true });
+    })().catch(() => sendResponse({ ok:false }));
+    return true;
   }
   if (msg?.type === 'CLEAR_MEDIA_CANDIDATES') {
-    const tabId = sender.tab?.id; if (Number.isInteger(tabId)) mediaByTab.delete(tabId); sendResponse({ ok: true }); return;
+    const tabId = sender.tab?.id; if (Number.isInteger(tabId)) { mediaByTab.delete(tabId); loadedTabs.add(tabId); queuePersist(tabId); } sendResponse({ ok: true }); return;
   }
   if (msg?.type === 'PAGE_MEDIA_CONTEXT') {
     const tabId = sender.tab?.id;
     if (!Number.isInteger(tabId)) { sendResponse({ ok:false }); return; }
-    const key = `${String(msg.url || sender.tab?.url || '').split('#')[0]}|${String(msg.title || '').trim().toLowerCase()}`;
-    if (key && contextByTab.get(tabId) !== key) {
-      contextByTab.set(tabId, key);
-      mediaByTab.delete(tabId);
-    }
-    sendResponse({ ok:true, context:key });
-    return;
+    (async () => {
+      await restoreTab(tabId);
+      const key = `${String(msg.url || sender.tab?.url || '')}|${String(msg.title || '').trim().toLowerCase()}`;
+      if (key && contextByTab.get(tabId) !== key) { contextByTab.set(tabId, key); mediaByTab.delete(tabId); queuePersist(tabId); }
+      sendResponse({ ok:true, context:key });
+    })();
+    return true;
   }
   if (msg?.type === 'MEDIA_PROGRESS' && Number.isInteger(msg.tabId)) {
     chrome.tabs.sendMessage(msg.tabId, { type: 'DOWNLOAD_PROGRESS', percent: msg.percent, phase: msg.phase, current: msg.current, total: msg.total, text: msg.text }).catch(() => {}); return;

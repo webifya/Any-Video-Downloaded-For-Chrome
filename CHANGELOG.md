@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.0 - 2026-08-25
+
+- Persisted bounded per-tab media/context state in session-only storage so Manifest V3 worker suspension no longer loses detections.
+- Added a minimal main-world History API hook for reliable programmatic SPA navigation detection without polling.
+- Changed HLS page recording to fallback-only behavior; fast fMP4 assembly and offscreen MPEG-TS conversion are attempted first.
+- Included URL fragments in media-context identity so hash-routed lessons with identical titles reset correctly.
+- Added regression coverage for session persistence, main-world SPA wiring, and HLS fast-path selection.
+
 ## 2.7.0 - 2026-08-24
 
 - Made SPA lesson/video context switching atomic and event-driven; added History API detection and removed the recurring title scan.

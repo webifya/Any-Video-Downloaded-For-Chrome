@@ -115,6 +115,11 @@
         setStatus('Signed YouTube URL expired; using the already-decoded page video fallback…');
         return;
       }
+      if(i.kind==='hls'&&/(?:decode|recorder|capture|convert|transport stream|MediaRecorder)/i.test(r?.error||'')){
+        document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'HLS video'}}));
+        setStatus('Using the already-decoded page video fallback…');
+        return;
+      }
       throw new Error(r?.error||'Download failed');
     }
     setStatus(r.message||'Download started.');

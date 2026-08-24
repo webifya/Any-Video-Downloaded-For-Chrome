@@ -185,17 +185,6 @@
     }
   }
 
-  function rowMeta(button) {
-    return button.closest('.pvd-item')?.querySelector('.pvd-meta')?.textContent || '';
-  }
-  function isHlsRowButton(button) { return rowMeta(button).includes('HLS Video'); }
-  function isSingleVideoDownloadAll(button) {
-    if (button.id !== 'page-video-downloader-all') return false;
-    const panel = button.closest('#page-video-downloader-panel');
-    const rows = [...(panel?.querySelectorAll('.pvd-item') || [])];
-    return rows.length === 1 && rows[0].querySelector('.pvd-meta')?.textContent?.includes('HLS Video');
-  }
-
   const decorate = () => {
     for (const row of document.querySelectorAll('#page-video-downloader-panel .pvd-item')) {
       const meta = row.querySelector('.pvd-meta')?.textContent || '';
@@ -206,20 +195,6 @@
     }
   };
   new MutationObserver(decorate).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-
-  document.addEventListener('click', e => {
-    const button = e.target.closest('#page-video-downloader-panel button');
-    if (!button || busy) return;
-    const hls = isHlsRowButton(button);
-    const all = isSingleVideoDownloadAll(button);
-    if (!hls && !all) return;
-
-    // Record the already-authorized, already-decoded HLS player into MP4/WebM.
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    captureDecodedPageVideo('HLS video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
-  }, true);
 
   document.addEventListener('avd:capture-request', e => {
     if (busy) return;

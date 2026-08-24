@@ -7,10 +7,15 @@ const youtube = read('youtube-probe.js');
 const hls = read('offscreen-v2.js');
 const capture = read('hls-page-capture.js');
 const content = read('content.js');
+const navigation = read('spa-navigation-hook.js');
+const manifest = JSON.parse(read('manifest.json'));
 
 assert.match(title, /PAGE_MEDIA_CONTEXT/, 'SPA context changes must use the atomic service-worker context handshake');
-assert.match(title, /pushState[\s\S]*replaceState/, 'History API navigation must be detected without reload');
+assert.match(title, /avd:history-navigation/, 'isolated-world title tracking must consume the main-world navigation signal');
 assert.doesNotMatch(title, /setInterval\s*\(/, 'SPA title detection must remain event-driven, not poll the page');
+assert.match(navigation, /pushState[\s\S]*replaceState/, 'main-world History API navigation must be detected without reload');
+assert.equal(manifest.content_scripts.some(x => x.world === 'MAIN' && x.js?.includes('spa-navigation-hook.js')), true, 'main-world SPA hook must be wired');
+assert.equal(manifest.permissions.includes('storage'), true, 'session persistence requires the storage permission');
 
 assert.match(youtube, /scheduleProbe/, 'YouTube probing should be debounced');
 assert.doesNotMatch(youtube, /setTimeout\(probe,\s*(?:300|900|1800|3200)/, 'YouTube must not run repeated probe bursts');
@@ -22,5 +27,7 @@ assert.match(hls, /info\.encrypted/, 'encrypted HLS must remain rejected');
 
 assert.match(content, /HTTP\\s\*403[\s\S]*avd:capture-request/, 'YouTube 403 should trigger decoded-player fallback only after fetch failure');
 assert.doesNotMatch(capture, /const yt = isYouTubeVideoButton/, 'YouTube downloads must not be intercepted before direct fetch is attempted');
+assert.doesNotMatch(capture, /page-video-downloader-panel button/, 'HLS downloads must try the fast offscreen path before page capture');
+assert.match(content, /i\.kind==='hls'[\s\S]*avd:capture-request/, 'failed HLS conversion should retain decoded-page capture as fallback');
 
 console.log('SPA, performance, HLS-output, DRM-boundary, and YouTube fallback regression tests passed');

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 let runtimeListener;
 let lastRuntimeMessage;
+const sessionData = {};
 const noopEvent = { addListener() {} };
 
 const chrome = {
@@ -20,7 +21,12 @@ const chrome = {
     sendMessage: async msg => { lastRuntimeMessage = msg; return { ok: true, merged: true }; }
   },
   offscreen: { createDocument: async () => {} },
-  downloads: { download: async () => 1 }
+  downloads: { download: async () => 1 },
+  storage: { session: {
+    async get(key) { return { [key]:sessionData[key] }; },
+    async set(values) { Object.assign(sessionData, values); },
+    async remove(key) { delete sessionData[key]; }
+  } }
 };
 
 const context = vm.createContext({ chrome, URL, console, setTimeout, clearTimeout, Promise, Map, Set, Number, String, Boolean, Math, RegExp, Error, Array, Object });
@@ -87,5 +93,8 @@ assert.equal(lesson.items.length, 1, 'repeated context events must not erase cur
 await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson Two', url: 'https://course.test/lesson' });
 lesson = await message({ type: 'GET_MEDIA_CANDIDATES' });
 assert.equal(lesson.items.length, 0, 'a true SPA lesson change should clear stale media exactly once');
+await new Promise(resolve => setTimeout(resolve, 180));
+assert.equal(sessionData['avd-tab-1']?.context.endsWith('|lesson two'), true, 'current SPA context should persist across MV3 worker suspension');
+assert.equal(sessionData['avd-tab-1']?.items?.length, 0, 'cleared lesson state should persist without stale candidates');
 
 console.log('service-worker smoke tests passed');

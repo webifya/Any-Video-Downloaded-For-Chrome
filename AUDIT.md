@@ -1,4 +1,4 @@
-# Any Video Downloader v2.7.0 Technical Audit
+# Any Video Downloader v2.8.0 Technical Audit
 
 ## Scope
 
@@ -6,7 +6,7 @@ The extension was reviewed for self-hosted media, GoHighLevel/course platforms, 
 
 ## Architecture
 
-1. `service-worker.js` observes likely media requests, canonicalizes repeated range variants, preserves track/quality metadata, and keeps a bounded per-tab cache.
+1. `service-worker.js` observes likely media requests, canonicalizes repeated range variants, preserves track/quality metadata, and keeps a bounded per-tab cache mirrored to session-only storage for MV3 restart recovery.
 2. `content.js` determines the current page/lesson title, selects one primary video action, pairs separate audio when required, and resets state on SPA/video changes.
 3. `youtube-probe.js` reads accessible YouTube `streamingData` and reports progressive/adaptive, audio/video, resolution and bitrate metadata.
 4. `youtube-listener.js` bridges those candidates to the extension service worker.
@@ -31,7 +31,7 @@ Volatile range parameters are removed before extension-local fetch, while the or
 
 ### SPA/course lesson changes
 
-The current page/lesson/video signature is monitored with debounced navigation, DOM, History API and player events. A service-worker context key clears old candidates exactly once, preventing both stale previous-lesson results and the former race that erased early requests from a new lesson. No recurring full-page scan is used.
+The current page/lesson/video signature is monitored with debounced navigation, DOM, History API and player events. A minimal main-world hook publishes `pushState`/`replaceState` navigation to the isolated title detector. A service-worker context key, including hash routes, clears old candidates exactly once. No recurring full-page scan is used.
 
 ### Separate video and audio
 
@@ -44,6 +44,8 @@ If the browser cannot decode/record a particular codec pair, the successfully fe
 ### HLS
 
 The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode them. fMP4 output remains MP4; assembled MPEG-TS is decoded and recorded into a genuine MP4 or WebM container. Raw `.ts` is never saved. If Chrome lacks a compatible decoder/recorder, the extension reports the limitation rather than creating a corrupt or mislabeled file.
+
+Fast offscreen HLS processing is attempted before page-decoded recording. The latter remains a compatibility fallback and no longer interrupts normal page playback for streams that can be assembled directly.
 
 ### DASH
 

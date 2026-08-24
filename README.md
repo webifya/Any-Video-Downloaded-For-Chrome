@@ -6,9 +6,11 @@
 
 ## Current version
 
-**v2.4.0 — Local adaptive merge architecture**
+**v2.4.1 — Adaptive merge stabilization**
 
-v2.4.0 changes the architecture for sites that deliver video and audio as separate adaptive tracks. Instead of forcing the user to keep a silent video file plus a separate audio file, the extension now fetches both accessible tracks and attempts to merge them locally inside Chrome into one playable file.
+v2.4.x changes the architecture for sites that deliver video and audio as separate adaptive tracks. The extension now fetches both accessible tracks and attempts to merge them locally inside Chrome into one playable file instead of leaving the user with a silent video plus a separate audio file.
+
+v2.4.1 also removes the obsolete GHL sandbox processor, validates the new processor files in CI, and prevents MPEG-TS HLS bytes from being falsely named as MP4.
 
 ## Main features
 
@@ -48,23 +50,28 @@ Large platforms frequently change player delivery methods and signed URLs, so no
 
 When a complete progressive file already contains both video and audio, it can be downloaded directly.
 
-When the best available quality is split into separate accessible video and audio tracks, v2.4.0 uses this flow:
+When the best available quality is split into separate accessible video and audio tracks, v2.4.1 uses this flow:
 
 1. Fetch the selected video track locally.
 2. Fetch the selected audio track locally.
-3. Convert the fetched data to extension-local Blob URLs so cross-origin media is not captured directly.
-4. Decode the two tracks in an offscreen document.
-5. Synchronize video and audio playback.
-6. Record the combined `MediaStream` with Chrome's local `MediaRecorder` implementation.
-7. Save one merged MP4 when Chrome supports MP4 recording, otherwise save a WebM file.
+3. Convert both to extension-local Blob URLs.
+4. Decode them in the offscreen media processor.
+5. Synchronize the video and audio tracks.
+6. Combine them into one local `MediaStream`.
+7. Record one output file with Chrome's native `MediaRecorder`.
+8. Save MP4 when the installed Chrome build supports MP4 recording, otherwise save WebM.
 
 No external converter or remote executable code is used.
 
 ### Merge fallback
 
-Some uncommon codec/container combinations cannot be decoded or recorded by the installed Chrome build. In that case, the extension preserves the successfully downloaded source tracks as separate files rather than discarding them.
+Some uncommon codec/container combinations cannot be decoded or recorded by the installed Chrome build. In that case, the extension preserves the successfully fetched source tracks as separate files rather than creating a corrupt output.
 
-The local merge stage runs at approximately media playback speed because it uses Chrome's native decode/capture/record pipeline. This trades speed for a much smaller extension, no FFmpeg/WASM dependency, and Chrome Web Store-friendly local processing.
+The local merge phase runs at approximately media playback speed because it uses Chrome's native decode/capture/record pipeline. This keeps the extension relatively small and avoids an external conversion service or a large FFmpeg/WASM runtime.
+
+## HLS container safety
+
+Some HLS playlists use fragmented MP4 while others use MPEG-TS. v2.4.1 no longer labels raw MPEG-TS bytes as `.mp4`. If a source cannot be locally merged/transcoded and is actually MPEG-TS, the fallback is saved with the correct `.ts` container extension.
 
 ## Install on Chrome
 
@@ -81,27 +88,27 @@ The local merge stage runs at approximately media playback speed because it uses
 ## How to use
 
 1. Open the page containing the video.
-2. If the player lazy-loads its media, play it for a few seconds.
+2. If the player lazy-loads media, play it for a few seconds.
 3. Click the floating **↓** launcher.
 4. Click **Scan** when necessary.
-5. Use **Download Video** or **Download + Merge** for the main video.
-6. Use **Download Audio** when an audio-only copy is also desired.
+5. Use **Download Video** or **Download + Merge** for the primary video.
+6. Use **Download Audio** only when an audio-only copy is also desired.
 
-On course/SPA pages, switch lessons normally. The extension detects the lesson/page change, clears old stream URLs, and scans the newly loaded lesson.
+On course/SPA pages, switch lessons normally. The extension detects the lesson/page change, clears stale stream URLs, and scans the newly loaded lesson.
 
-## v2.4.0 architecture fixes
+## v2.4.1 fixes
 
-- Added a new `DOWNLOAD_MERGED_MEDIA` processing path.
+- Stabilized the v2.4 local adaptive audio/video merge path.
 - Preserves `hasAudio`, `hasVideo`, progressive/adaptive, quality and bitrate metadata from player responses.
-- The page UI now presents one primary video action instead of exposing every adaptive network fragment.
-- Separate video/audio tracks are paired automatically.
-- Signed YouTube/Meta/Vimeo range URLs are normalized before local fetch, with original signed URLs retained for fallback.
-- Local blob URLs avoid cross-origin `captureStream()` restrictions during the merge stage.
-- Native `MediaRecorder.isTypeSupported()` chooses MP4 when available and WebM otherwise.
-- Audio/video synchronization is corrected during long merges.
-- HLS and DASH separate-track flows now attempt local merge before falling back to separate files.
-- The offscreen document uses the `BLOBS` reason so long fetch/merge jobs are not tied to Chrome's special audio-playback lifetime rule.
-- Automated smoke tests cover adaptive pair routing, YouTube metadata preservation and Facebook/Meta byte-range deduplication.
+- Presents one primary video action instead of every adaptive network fragment.
+- Pairs separate video/audio tracks automatically.
+- Normalizes signed YouTube/Meta/Vimeo range URLs while retaining the original signed URL for fallback.
+- Uses extension-local Blob URLs for the local merge stage.
+- Chooses MP4 recording when supported by Chrome and WebM otherwise.
+- HLS and DASH separate-track flows attempt local merge before falling back to separate source files.
+- Removed the obsolete GHL `sandbox.html` processor reference from the offscreen document.
+- Added a format guard so MPEG-TS data is not mislabeled as MP4.
+- CI now validates the format guard, offscreen references, JavaScript syntax, manifest structure, adaptive-pair routing and Meta byte-range deduplication.
 
 See [AUDIT.md](AUDIT.md) for the technical audit.
 
@@ -118,8 +125,8 @@ See [AUDIT.md](AUDIT.md) for the technical audit.
 
 ## Remaining boundaries
 
-The extension does not bypass DRM/encrypted streams, paywalls, subscription controls, authentication restrictions, or website security controls. These are intentional boundaries, not bugs to work around.
+The extension does not bypass DRM/encrypted streams, paywalls, subscription controls, authentication restrictions, or website security controls. These are intentional boundaries.
 
-Very large media files still require substantial local memory because fetched/assembled media is processed in the browser. The v2.4 architecture avoids external services and large bundled WASM binaries, but a future disk-backed processing queue could further reduce peak memory use for multi-gigabyte files.
+Very large media files still require substantial local memory because fetched/assembled media is processed in the browser. A future disk-backed processing queue could reduce peak memory use for multi-gigabyte media.
 
 Use the extension only for media you own or have permission to save.

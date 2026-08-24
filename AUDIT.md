@@ -1,4 +1,4 @@
-# Any Video Downloader v2.9.2 Technical Audit
+# Any Video Downloader v2.9.3 Technical Audit
 
 ## Scope
 
@@ -48,6 +48,8 @@ If the browser cannot decode/record a particular codec pair, the successfully fe
 The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode them. fMP4 output remains MP4; assembled MPEG-TS is decoded and recorded into a genuine MP4 or WebM container. Raw `.ts` is never saved. If Chrome lacks a compatible decoder/recorder, the extension reports the limitation rather than creating a corrupt or mislabeled file.
 
 Fast offscreen HLS processing is attempted before page-decoded recording. The latter remains a compatibility fallback and no longer interrupts normal page playback for streams that can be assembled directly.
+
+When an HLS request originates in an embedded player, its Chrome frame ID is retained through detection and session persistence. If decoded capture is required, the service worker targets that frame, returns progress to the top panel, and supplies the top lesson title. The fallback no longer searches only the top document for a video element.
 
 ### DASH
 

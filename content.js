@@ -42,7 +42,7 @@
     return {
       url,kind,mime:raw.mime||'',source:raw.source||'page',name:sanitize(raw.name),
       contentLength:Number(raw.contentLength||0),totalLength:Number(raw.totalLength||0),width:Number(raw.width||0),height:Number(raw.height||0),bitrate:Number(raw.bitrate||0),
-      qualityLabel:sanitize(raw.qualityLabel),itag:Number(raw.itag||0),seenAt:Number(raw.seenAt||Date.now()),
+      qualityLabel:sanitize(raw.qualityLabel),itag:Number(raw.itag||0),seenAt:Number(raw.seenAt||Date.now()),frameId:Number.isInteger(raw.frameId)?raw.frameId:0,
       hasAudio:raw.hasAudio===undefined?undefined:!!raw.hasAudio,hasVideo:raw.hasVideo===undefined?undefined:!!raw.hasVideo,isProgressive:!!(raw.isProgressive||raw.progressive)
     };
   }
@@ -58,7 +58,7 @@
   function remember(raw){
     const item=normalize(raw); if(!item)return false; if(item.seenAt<state.epoch-2500)return false;
     const k=key(item),prev=state.candidates.get(k)||{};
-    state.candidates.set(k,{...prev,...item,name:item.name||prev.name||'',contentLength:item.contentLength||prev.contentLength||0,totalLength:item.totalLength||prev.totalLength||0,width:item.width||prev.width||0,height:item.height||prev.height||0,bitrate:item.bitrate||prev.bitrate||0,qualityLabel:item.qualityLabel||prev.qualityLabel||'',hasAudio:item.hasAudio!==undefined?item.hasAudio:prev.hasAudio,hasVideo:item.hasVideo!==undefined?item.hasVideo:prev.hasVideo,isProgressive:item.isProgressive||prev.isProgressive||false});
+    state.candidates.set(k,{...prev,...item,name:item.name||prev.name||'',contentLength:item.contentLength||prev.contentLength||0,totalLength:item.totalLength||prev.totalLength||0,width:item.width||prev.width||0,height:item.height||prev.height||0,bitrate:item.bitrate||prev.bitrate||0,qualityLabel:item.qualityLabel||prev.qualityLabel||'',frameId:item.frameId||prev.frameId||0,hasAudio:item.hasAudio!==undefined?item.hasAudio:prev.hasAudio,hasVideo:item.hasVideo!==undefined?item.hasVideo:prev.hasVideo,isProgressive:item.isProgressive||prev.isProgressive||false});
     return !prev.url;
   }
   function collectDom(){ let changed=false; for(const v of document.querySelectorAll('video')){ const name=nearbyTitle(v); const urls=[v.currentSrc,v.src,...[...v.querySelectorAll('source')].map(s=>s.src)]; for(const url of urls){if(!url||url.startsWith('blob:'))continue;changed=remember({url,kind:isDash(url)?'dash':isHls(url)?'hls':isAudio(url)?'audio':'video',source:'dom',name,hasAudio:true,hasVideo:true})||changed;} } return changed; }
@@ -144,8 +144,7 @@
     if(!r?.ok){
       if(/(?:^|\.)youtube\.com$/i.test(location.hostname)&&/googlevideo\.com/i.test(i.url||''))throw new Error('YouTube did not expose a fresh downloadable stream URL. Reload the video page and scan again; real-time page recording was not started.');
       if(i.kind==='hls'&&/(?:decode|recorder|capture|convert|transport stream|MediaRecorder)/i.test(r?.error||'')){
-        document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'HLS video'}}));
-        setStatus('Using the already-decoded page video fallback…');
+        if(Number(i.frameId)>0){const fallback=await chrome.runtime.sendMessage({type:'CAPTURE_FRAME_VIDEO',frameId:Number(i.frameId),label:'HLS video',filenameBase:pageTitle()});if(!fallback?.ok)throw new Error(`${r.error||'HLS conversion failed'} Embedded-player fallback failed: ${fallback?.error||'frame unavailable'}`);setStatus(`Capturing ${pageTitle()} from its embedded player…`);}else{document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'HLS video',filenameBase:pageTitle()}}));setStatus('Using the already-decoded page video fallback…');}
         return;
       }
       throw new Error(r?.error||'Download failed');

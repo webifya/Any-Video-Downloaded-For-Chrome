@@ -72,11 +72,12 @@ assert.ok(!/[?&]range=/.test(lastRuntimeMessage.video.url), 'volatile YouTube ra
 
 await message({ type: 'CLEAR_MEDIA_CANDIDATES' });
 await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [
-  { url: 'https://video.xx.fbcdn.net/o1/v/t2/f2/video.mp4?token=abc&bytestart=0&byteend=999', kind: 'video', mime: 'video/mp4', contentLength: 1000 },
+  { url: 'https://video.xx.fbcdn.net/o1/v/t2/f2/video.mp4?token=abc&bytestart=0&byteend=999', kind: 'video', mime: 'video/mp4', contentLength: 1000, frameId:7 },
   { url: 'https://video.xx.fbcdn.net/o1/v/t2/f2/video.mp4?token=abc&bytestart=1000&byteend=1999', kind: 'video', mime: 'video/mp4', contentLength: 1000 }
 ] });
 const meta = await message({ type: 'GET_MEDIA_CANDIDATES' });
 assert.equal(meta.items.length, 1, 'Meta byte-range variants should deduplicate to one media candidate');
+assert.equal(meta.items[0].frameId, 7, 'embedded-player frame identity should survive candidate merging');
 
 await message({ type: 'CLEAR_MEDIA_CANDIDATES' });
 await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson One', url: 'https://course.test/lesson' });

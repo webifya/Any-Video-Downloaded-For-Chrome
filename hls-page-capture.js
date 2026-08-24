@@ -1,6 +1,4 @@
 (() => {
-  if (window.top !== window.self) return;
-
   let busy = false;
   const clean = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 170) || 'Video';
   const isYouTube = /(^|\.)youtube\.com$/i.test(location.hostname);
@@ -42,6 +40,7 @@
     if (wrap) wrap.style.display = 'block';
     if (bar && Number.isFinite(pct)) bar.value = Math.max(0, Math.min(100, pct));
     if (s) s.textContent = text;
+    if(window.top!==window.self)chrome.runtime.sendMessage({type:'FRAME_CAPTURE_PROGRESS',text,percent:Number.isFinite(pct)?pct:0}).catch(()=>{});
   }
 
   function recorderType() {
@@ -90,7 +89,7 @@
     setTimeout(() => URL.revokeObjectURL(u), 180000);
   }
 
-  async function captureDecodedPageVideo(label = 'video') {
+  async function captureDecodedPageVideo(label = 'video', filenameBase = '') {
     if (busy) throw new Error('A page capture is already running.');
     const video = player();
     if (!video) throw new Error('No active page video element was found.');
@@ -165,7 +164,7 @@
       const blob = new Blob(chunks, { type: outType });
       if (blob.size < 32768) throw new Error('Decoded page capture produced an unexpectedly small file.');
       const ext = /mp4/i.test(outType) ? '.mp4' : '.webm';
-      const filename = `${title()}${ext}`;
+      const filename = `${clean(filenameBase||title())}${ext}`;
       save(blob, filename);
       status(`Downloaded ${filename}`, 100);
       return filename;
@@ -187,7 +186,15 @@
 
   document.addEventListener('avd:capture-request', e => {
     if (busy) return;
-    captureDecodedPageVideo(e.detail?.label || 'video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
+    captureDecodedPageVideo(e.detail?.label || 'video',e.detail?.filenameBase||'').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
+  });
+
+  chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
+    if(msg?.type!=='START_FRAME_VIDEO_CAPTURE')return;
+    const video=player();if(!video){sendResponse({ok:false,error:'No active video element was found in the detected player frame.'});return;}
+    const capture=video.captureStream?.bind(video)||video.webkitCaptureStream?.bind(video);if(!capture){sendResponse({ok:false,error:'The embedded player does not expose captureStream.'});return;}
+    if(!Number.isFinite(video.duration)||video.duration<=0||video.duration===Infinity){sendResponse({ok:false,error:'Embedded video metadata is not ready.'});return;}
+    captureDecodedPageVideo(msg.label||'HLS video',msg.filenameBase||'').catch(err=>status(`Video capture failed: ${err.message||err}`,0));sendResponse({ok:true,started:true});
   });
 
 })();

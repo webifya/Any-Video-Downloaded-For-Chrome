@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Any Video Downloader",
-  "version": "2.9.2",
+  "version": "2.9.3",
   "description": "Detect and download accessible videos from web pages, including direct files, unencrypted HLS, DASH/adaptive streams, signed CDN media, and local audio/video merging.",
   "permissions": ["downloads", "offscreen", "storage", "webRequest", "declarativeNetRequestWithHostAccess"],
   "host_permissions": ["<all_urls>"],
@@ -11,7 +11,8 @@
       "matches": ["<all_urls>"],
       "js": ["title-helper.js", "content.js", "hls-page-capture.js"],
       "css": ["content.css"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": ["*://*.youtube.com/*"],

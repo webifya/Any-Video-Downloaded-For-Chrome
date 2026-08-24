@@ -106,7 +106,7 @@ function compactItem(item) {
   return {
     url:item.url, originalUrl:item.originalUrl || '', kind:item.kind, mime:item.mime || '', source:item.source || '',
     contentLength:Number(item.contentLength || 0), totalLength:Number(item.totalLength || 0), width:Number(item.width || 0),
-    height:Number(item.height || 0), bitrate:Number(item.bitrate || 0), qualityLabel:item.qualityLabel || '', itag:Number(item.itag || 0),
+    height:Number(item.height || 0), bitrate:Number(item.bitrate || 0), qualityLabel:item.qualityLabel || '', itag:Number(item.itag || 0), frameId:Number.isInteger(item.frameId)?item.frameId:0,
     hasAudio:item.hasAudio, hasVideo:item.hasVideo, isProgressive:!!item.isProgressive, seenAt:Number(item.seenAt || Date.now())
   };
 }
@@ -275,6 +275,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === 'MEDIA_PROGRESS' && Number.isInteger(msg.tabId)) {
     chrome.tabs.sendMessage(msg.tabId, { type: 'DOWNLOAD_PROGRESS', percent: msg.percent, phase: msg.phase, current: msg.current, total: msg.total, text: msg.text }).catch(() => {}); return;
+  }
+  if (msg?.type === 'FRAME_CAPTURE_PROGRESS') {
+    const tabId=sender.tab?.id;if(Number.isInteger(tabId))chrome.tabs.sendMessage(tabId,{type:'DOWNLOAD_PROGRESS',percent:msg.percent,text:msg.text,phase:'frame-capture'}).catch(()=>{});return;
+  }
+  if (msg?.type === 'CAPTURE_FRAME_VIDEO') {
+    (async()=>{const tabId=sender.tab?.id,frameId=Number(msg.frameId);if(!Number.isInteger(tabId)||!Number.isInteger(frameId)||frameId<=0)throw new Error('Embedded player frame was not identified.');const response=await chrome.tabs.sendMessage(tabId,{type:'START_FRAME_VIDEO_CAPTURE',label:msg.label||'HLS video',filenameBase:safeBase(msg.filenameBase)},{frameId});sendResponse(response||{ok:false,error:'Embedded player did not respond.'});})().catch(error=>sendResponse({ok:false,error:error.message||String(error)}));return true;
   }
   if (msg?.type === 'DOWNLOAD_MEDIA') {
     (async () => {

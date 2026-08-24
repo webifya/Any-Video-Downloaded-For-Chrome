@@ -18,6 +18,7 @@ assert.doesNotMatch(title, /setInterval\s*\(/, 'SPA title detection must remain 
 assert.match(navigation, /pushState[\s\S]*replaceState/, 'main-world History API navigation must be detected without reload');
 assert.equal(manifest.content_scripts.some(x => x.world === 'MAIN' && x.js?.includes('spa-navigation-hook.js')), true, 'main-world SPA hook must be wired');
 assert.equal(manifest.permissions.includes('storage'), true, 'session persistence requires the storage permission');
+assert.equal(manifest.content_scripts[0].all_frames, true, 'capture fallback must be injected into embedded player frames');
 assert.doesNotMatch(title, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'title tracking must not observe high-frequency page class mutations');
 
 assert.match(youtube, /scheduleProbe/, 'YouTube probing should be debounced');
@@ -34,6 +35,9 @@ assert.doesNotMatch(capture, /const yt = isYouTubeVideoButton/, 'YouTube downloa
 assert.doesNotMatch(capture, /page-video-downloader-panel button/, 'HLS downloads must try the fast offscreen path before page capture');
 assert.doesNotMatch(capture, /new MutationObserver/, 'capture fallback must not install a page-wide UI observer');
 assert.match(content, /i\.kind==='hls'[\s\S]*avd:capture-request/, 'failed HLS conversion should retain decoded-page capture as fallback');
+assert.match(content, /CAPTURE_FRAME_VIDEO[\s\S]*frameId/, 'embedded HLS fallback must target the candidate frame');
+assert.doesNotMatch(capture, /window\.top\s*!==\s*window\.self\)\s*return/, 'capture helper must remain available inside player frames');
+assert.match(capture, /START_FRAME_VIDEO_CAPTURE[\s\S]*filenameBase/, 'player frames must accept titled capture requests');
 assert.doesNotMatch(content, /triggerPlayers|\.play\(\)[\s\S]{0,100}Scanning/, 'media scanning must never start page playback');
 assert.doesNotMatch(content, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'media tracking must not observe high-frequency class mutations');
 assert.match(content, /collectDeclarative[\s\S]*og:video[\s\S]*application\/ld\+json/, 'pre-play discovery should inspect bounded declarative media metadata');

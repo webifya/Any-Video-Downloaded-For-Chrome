@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.3 - 2026-08-25
+
+- Fixed `Video capture failed: No active page video element was found` when an HLS player lives in a cross-origin iframe.
+- Preserved the network candidate's Chrome frame ID through caching, persistence, deduplication, and UI selection.
+- Routed fallback capture to the exact embedded player frame and relayed its progress to the top-page downloader panel.
+- Passed the top-page lesson title into frame capture so iframe/provider titles do not replace the intended filename.
+- Added embedded-frame wiring, frame-ID preservation, and capture-routing regression coverage.
+
 ## 2.9.2 - 2026-08-25
 
 - Fixed DigitalMarketer/course filename selection shown in the Loom recording: completed lesson checkboxes are no longer treated as the active lesson.

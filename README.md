@@ -6,9 +6,9 @@
 
 ## Current version
 
-**v2.9.2 — correct LMS lesson filenames and completion results**
+**v2.9.3 — embedded-player HLS fallback**
 
-v2.9.2 fixes the LMS behavior demonstrated on DigitalMarketer: completed-lesson checkboxes no longer override the active lesson, the visible heading closest to the player receives highest title priority, and Download All preserves the concrete downloaded filename/result instead of replacing it with “Finished.”
+v2.9.3 fixes HLS fallback for course players hosted in cross-origin iframes. The candidate retains its originating frame ID; if offscreen conversion is unavailable, capture starts in that embedded frame instead of incorrectly searching the top page. Progress returns to the top downloader panel and the current lesson title is preserved.
 
 Web services that accept a pasted YouTube URL commonly use a remote extraction/conversion workflow. This extension remains local-only and does not send viewing URLs to an undisclosed third-party conversion server.
 

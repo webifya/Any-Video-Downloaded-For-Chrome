@@ -1,78 +1,60 @@
-# Any Video Downloader v2.4.0 Technical Audit
+# Any Video Downloader v2.4.1 Technical Audit
 
 ## Scope
 
-The extension was reviewed for direct/self-hosted media, GoHighLevel/course platforms, SPA navigation, embedded/custom players, signed CDN delivery, HLS, DASH, YouTube adaptive delivery, Facebook/Instagram byte ranges, Vimeo CDN delivery, and the major limitation where video and audio are delivered as separate tracks.
+The extension was reviewed for self-hosted media, GoHighLevel/course platforms, SPA navigation, embedded/custom players, signed CDN delivery, HLS, DASH, YouTube adaptive delivery, Facebook/Instagram byte ranges, Vimeo CDN delivery, and separate video/audio adaptive streams.
 
-## Architecture after v2.4.0
+## Architecture
 
-1. `service-worker.js` observes likely media requests, canonicalizes byte-range variants, preserves quality/track metadata, and keeps a bounded per-tab candidate cache.
-2. `content.js` derives the current page/lesson title, selects one primary video action, pairs a separate audio track when needed, and resets state on SPA/video changes.
-3. `youtube-probe.js` reads accessible YouTube `streamingData` in the page world and marks progressive/adaptive, audio/video, quality and bitrate metadata.
+1. `service-worker.js` observes likely media requests, canonicalizes byte-range variants, preserves track/quality metadata, and keeps a bounded per-tab cache.
+2. `content.js` determines the current page/lesson title, chooses one primary video action, pairs separate audio when required, and resets state on SPA/video changes.
+3. `youtube-probe.js` reads accessible YouTube `streamingData` and reports progressive/adaptive, audio/video, resolution and bitrate metadata.
 4. `youtube-listener.js` bridges those candidates to the extension service worker.
-5. `offscreen.js` handles signed direct fetches, unencrypted HLS/DASH assembly, and the local adaptive audio/video merge engine.
-6. The local merge engine converts fetched cross-origin tracks to extension-local Blob URLs, decodes them in hidden media elements, synchronizes them, combines the tracks into a `MediaStream`, and records one output file with `MediaRecorder`.
+5. `offscreen.js` fetches signed direct media, assembles unencrypted HLS/DASH, and runs the local adaptive audio/video merge engine.
+6. `format-guard.js` prevents MPEG-TS bytes from being mislabeled with an MP4 extension.
+7. The offscreen document no longer contains the obsolete GHL sandbox iframe.
 
-## Issues fixed
+## Major fixes
 
-### Duplicate range requests
-Facebook, Instagram, YouTube, Vimeo and other CDNs often request many byte ranges for one logical stream. Range-specific parameters are canonicalized and repeated requests are collapsed into one logical candidate.
+### Duplicate and tiny range requests
+Facebook, Instagram, YouTube, Vimeo and other CDNs frequently request many byte ranges for one logical stream. Range-specific parameters are canonicalized and repeated requests are collapsed. `Content-Range` total size is preferred over misleading chunk sizes.
 
-### Misleading 0 KB/tiny sizes
-The service worker records total size from `Content-Range` when present and keeps useful earlier metadata when later requests contain zero or partial values.
+### SPA/course lesson changes
+The current page/lesson/video signature is monitored with debounced navigation and DOM events. Old candidates are cleared before the new lesson is scanned, preventing the previous video from being downloaded after a JavaScript-only lesson change.
 
-### Stale SPA/course media
-Course sites can switch lessons without reloading the document. The content layer detects meaningful URL/title/player changes, clears the old candidate set and rescans the new lesson.
+### Signed CDN failures
+Known range parameters are removed before extension-local fetch. The original signed URL is kept and retried if the cleaned URL is rejected.
 
-### Signed CDN download failures
-Known range parameters are removed before extension-local fetches. The original signed URL is retained and retried when the cleaned URL is rejected.
+### Separate video and audio
+When a complete progressive file already includes audio, it can be downloaded directly. When the best video is video-only and a separate audio track exists, the UI creates one `Download + Merge` action.
 
-### Separate adaptive video/audio
-This was the largest architectural limitation before v2.4.0. When the selected video lacks audio and a separate audio track is available, the UI now offers a single primary `Download + Merge` operation. Both tracks are fetched and merged locally.
+The merger fetches both accessible tracks, creates extension-local Blob URLs, decodes them in the offscreen document, synchronizes playback, combines their media tracks and records one output using Chrome's native `MediaRecorder`. MP4 is preferred when supported by the installed Chrome build; otherwise WebM is used.
 
-### Cross-origin capture restriction
-Chrome blocks direct `captureStream()` on cross-origin media. v2.4.0 does not capture the remote element. It first fetches authorized media through the extension and creates extension-origin Blob URLs, then performs local decoding/capture from those Blob URLs.
+If Chrome cannot decode or record a particular codec/container pair, the successfully fetched source tracks are saved separately rather than generating a corrupt file.
 
-### Output container selection
-The merge engine checks `MediaRecorder.isTypeSupported()`. It prefers MP4 recording when the installed Chrome build supports it and otherwise uses WebM. This avoids simply renaming incompatible bytes to `.mp4`.
+### HLS
+The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate HLS tracks are merged locally when Chrome can decode them. MPEG-TS fallback data is saved as `.ts`, not falsely renamed `.mp4`.
 
-### HLS separate audio
-Master playlists and `EXT-X-MEDIA:TYPE=AUDIO` are parsed. When separate tracks are decodable locally, the extension attempts a single merged output; if Chrome cannot decode the source container, valid source tracks are preserved as fallback files.
-
-### DASH separate audio/video
-`SegmentTemplate`, `SegmentTimeline`, `SegmentList` and direct `BaseURL` representations are supported. The best video/audio representations are assembled, then the local merge engine attempts one playable output.
+### DASH
+DASH handling supports `SegmentTemplate`, `SegmentTimeline`, `SegmentList`, and direct `BaseURL` representations. The best accessible video/audio tracks are assembled and sent through the local merge path. MPDs containing `ContentProtection` are rejected rather than bypassed.
 
 ### Performance
-There is no recurring full-page media scan loop. Heavy media scanning is user initiated; DOM navigation checks are debounced and network caches are bounded.
+There is no recurring full-page media scan loop. Heavy scanning is user initiated, DOM checks are debounced, Performance API inspection is bounded, and the network candidate cache is capped.
 
-## Expected compatibility classes
+## Expected compatibility
 
-- **Strong:** ordinary HTML5/self-hosted MP4/WebM; accessible direct media.
+- **Strong:** ordinary HTML5/self-hosted MP4/WebM and accessible direct media.
 - **Strong/best effort:** GHL and similar course platforms using accessible direct media or unencrypted HLS.
-- **Best effort with local merge:** YouTube, Facebook/Instagram, Vimeo and similar adaptive platforms when the browser exposes usable signed video/audio URLs.
-- **Best effort:** X/Twitter, Reddit, Dailymotion, Twitch, TikTok, Loom, Streamable, Wistia, Brightcove, Bunny, Mux, Cloudflare Stream, JW Player and Video.js sites when accessible direct/HLS/DASH requests are exposed.
-- **Unsupported by design:** DRM-protected playback or media that requires bypassing paywalls, authentication, subscription controls, or encryption/access controls.
+- **Best effort with local merge:** YouTube, Facebook/Instagram, Vimeo and similar adaptive platforms when usable signed video/audio URLs are exposed to the browser.
+- **Best effort:** X/Twitter, Reddit, Dailymotion, Twitch, TikTok, Loom, Streamable, Wistia, Brightcove, Bunny, Mux, Cloudflare Stream, JW Player and Video.js sites using accessible direct/HLS/DASH delivery.
+- **Unsupported by design:** DRM-protected/encrypted playback or media requiring bypass of paywalls, authentication, subscription controls or security/access controls.
 
 ## Remaining technical boundaries
 
-### DRM/access controls
-Widevine, PlayReady, FairPlay and equivalent DRM/access-control systems are intentionally not bypassed.
+The local merge stage operates near playback speed because it uses Chrome's native decode/capture/record pipeline instead of a large FFmpeg/WASM runtime or remote conversion server. Very large media can still consume significant browser memory because fetched/assembled data is processed locally. Platform stream formats and signed URLs can change, so rescanning after starting playback may be necessary when a URL expires.
 
-### Codec support
-The local merger depends on codecs the installed Chrome build can decode and record. When a pair is not supported, the extension saves the valid source tracks separately instead of generating a corrupt output.
-
-### Merge speed
-The built-in local merge path uses native decode/capture/record and therefore runs near playback speed. This removes the silent-video limitation without shipping a large FFmpeg/WASM runtime or using a remote conversion server.
-
-### Very large files
-Large tracks are still held as local Blob/byte data during processing. Multi-gigabyte media can be constrained by browser memory. A future disk-backed OPFS/IndexedDB processing queue could reduce peak memory use.
-
-### HLS MPEG-TS
-Native HLS sources can use MPEG-TS. When Chrome cannot directly decode an assembled TS Blob through the local merge engine, the source media is retained rather than falsely claiming a successful MP4 conversion. A dedicated TS transmuxer would be required for guaranteed zero-reencode TS→MP4 conversion.
-
-### Platform changes
-Large platforms change stream signatures, codecs and player behavior regularly. Signed URLs can also expire; replaying the media and rescanning refreshes the candidate set.
+These are implementation/platform boundaries; DRM or access-control bypass is intentionally outside the extension's behavior.
 
 ## Validation
 
-The repository includes GitHub Actions validation for JavaScript syntax, Manifest V3 JSON and service-worker smoke tests. The smoke suite covers adaptive-pair routing, YouTube track metadata preservation and Meta/Facebook range deduplication.
+The repository validation workflow performs JavaScript syntax checks, parses and asserts the Manifest V3 configuration, checks that the offscreen processor references all required local scripts, and runs service-worker smoke tests covering adaptive-pair routing, YouTube metadata preservation and Meta/Facebook byte-range deduplication.

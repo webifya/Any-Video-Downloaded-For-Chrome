@@ -6,9 +6,9 @@
 
 ## Current version
 
-**v2.9.1 — fresh YouTube URLs without recorder timeouts**
+**v2.9.2 — correct LMS lesson filenames and completion results**
 
-v2.9.1 removes automatic real-time YouTube page recording. Immediately before a YouTube download, the extension requests the current player response again, replaces cached signed URLs, removes expired streams, and retries one fresh download. If YouTube exposes no usable URL, it reports that boundary promptly instead of recording for the video's duration and eventually timing out.
+v2.9.2 fixes the LMS behavior demonstrated on DigitalMarketer: completed-lesson checkboxes no longer override the active lesson, the visible heading closest to the player receives highest title priority, and Download All preserves the concrete downloaded filename/result instead of replacing it with “Finished.”
 
 Web services that accept a pasted YouTube URL commonly use a remote extraction/conversion workflow. This extension remains local-only and does not send viewing URLs to an undisclosed third-party conversion server.
 

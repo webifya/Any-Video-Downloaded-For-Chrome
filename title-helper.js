@@ -47,15 +47,17 @@
       const vertical = Math.max(0, pr.top - r.bottom);
       const horizontal = Math.max(0, Math.abs((r.left + r.width / 2) - (pr.left + pr.width / 2)) - pr.width / 2);
       const dist = vertical + horizontal * 0.2;
-      if (dist <= 700) add(out, el.textContent, 150 - Math.min(80, dist / 8), 'near-player-heading');
+      if (dist <= 700) add(out, el.textContent, 215 - Math.min(90, dist / 8), 'near-player-heading');
     }
   }
 
   function currentTitle() {
     const out = [];
 
-    // Checked lesson/radio controls are extremely reliable on course SPAs.
-    for (const input of document.querySelectorAll('input[type="radio"]:checked,input[type="checkbox"]:checked')) {
+    // Selected radio controls can represent the active lesson. Generic checked
+    // checkboxes are deliberately excluded: many LMS sites use them for every
+    // completed lesson, which previously selected an old/course-level title.
+    for (const input of document.querySelectorAll('input[type="radio"]:checked')) {
       const t = labelForInput(input);
       if (t) add(out, t, 190, 'checked-control');
     }

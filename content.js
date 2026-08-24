@@ -152,7 +152,7 @@
     }
     setStatus(r.message||'Download started.');
   }
-  async function downloadAll(){if(state.downloading)return;state.downloading=true;disable(true);try{await scan(true);const pl=plan();if(!pl.primary&&!pl.audioOnly)throw new Error('No downloadable media detected.');if(pl.primary)await downloadOption(pl.primary);if(pl.audioOnly&&pl.primary?.mode!=='merged'){await sleep(250);await downloadOption(pl.audioOnly);}setStatus('Finished.');}catch(e){setStatus(`Download failed: ${e.message||e}`);}finally{state.downloading=false;state.currentLabel='';disable(false);}}
+  async function downloadAll(){if(state.downloading)return;state.downloading=true;disable(true);try{await scan(true);const pl=plan();if(!pl.primary&&!pl.audioOnly)throw new Error('No downloadable media detected.');if(pl.primary)await downloadOption(pl.primary);if(pl.audioOnly&&pl.primary?.mode!=='merged'){await sleep(250);await downloadOption(pl.audioOnly);}}catch(e){setStatus(`Download failed: ${e.message||e}`);}finally{state.downloading=false;state.currentLabel='';disable(false);}}
 
   chrome.runtime.onMessage.addListener(msg=>{if(msg?.type!=='DOWNLOAD_PROGRESS')return;const wrap=document.getElementById('page-video-downloader-progress-wrap'),bar=document.getElementById('page-video-downloader-progress'),status=document.getElementById('page-video-downloader-status');if(!wrap||!bar||!status)return;wrap.style.display='block';bar.value=Math.max(0,Math.min(100,Number(msg.percent)||0));status.textContent=`${state.currentLabel?state.currentLabel+': ':''}${msg.text||Math.round(bar.value)+'%'}`;});
 

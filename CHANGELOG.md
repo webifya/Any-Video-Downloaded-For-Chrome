@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.9.2 - 2026-08-25
+
+- Fixed DigitalMarketer/course filename selection shown in the Loom recording: completed lesson checkboxes are no longer treated as the active lesson.
+- Raised the visible heading nearest the player above course-level/sidebar labels, producing filenames such as `What You'll Need.mp4` instead of `Buyers From Scratch.mp4`.
+- Stopped Download All from overwriting the real completion filename/message with the ambiguous status `Finished.`
+- Added regression checks for LMS checkbox/title priority and preserved completion results.
+
 ## 2.9.1 - 2026-08-25
 
 - Removed automatic decoded-page recording as the YouTube HTTP 403 fallback, eliminating full-duration capture timeouts.

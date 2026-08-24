@@ -12,6 +12,8 @@ const manifest = JSON.parse(read('manifest.json'));
 
 assert.match(title, /PAGE_MEDIA_CONTEXT/, 'SPA context changes must use the atomic service-worker context handshake');
 assert.match(title, /avd:history-navigation/, 'isolated-world title tracking must consume the main-world navigation signal');
+assert.doesNotMatch(title, /input\[type=["']checkbox["']\]:checked/, 'completed LMS checkboxes must not be mistaken for the active lesson');
+assert.match(title, /215\s*-\s*Math\.min/, 'the heading closest to the player should outrank course-level navigation labels');
 assert.doesNotMatch(title, /setInterval\s*\(/, 'SPA title detection must remain event-driven, not poll the page');
 assert.match(navigation, /pushState[\s\S]*replaceState/, 'main-world History API navigation must be detected without reload');
 assert.equal(manifest.content_scripts.some(x => x.world === 'MAIN' && x.js?.includes('spa-navigation-hook.js')), true, 'main-world SPA hook must be wired');
@@ -37,5 +39,6 @@ assert.doesNotMatch(content, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'media 
 assert.match(content, /collectDeclarative[\s\S]*og:video[\s\S]*application\/ld\+json/, 'pre-play discovery should inspect bounded declarative media metadata');
 assert.match(youtube, /accessibleFormatUrl/, 'YouTube pre-play probing should accept already-signed cipher URLs without deciphering protected signatures');
 assert.match(youtube, /avd:youtube-refresh/, 'YouTube probe must support an explicit pre-download refresh');
+assert.doesNotMatch(content, /setStatus\(['"]Finished\./, 'Download All must preserve the concrete filename/result status');
 
 console.log('SPA, performance, HLS-output, DRM-boundary, and YouTube fallback regression tests passed');

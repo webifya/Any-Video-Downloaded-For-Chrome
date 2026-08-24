@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Any Video Downloader",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Detect and download accessible videos from web pages, including direct files, unencrypted HLS, DASH/adaptive streams, signed CDN media, and local audio/video merging.",
-  "permissions": ["downloads", "offscreen", "webRequest"],
+  "permissions": ["downloads", "offscreen", "webRequest", "declarativeNetRequestWithHostAccess"],
   "host_permissions": ["<all_urls>"],
-  "background": {"service_worker": "service-worker.js"},
+  "background": {"service_worker": "background.js"},
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["title-helper.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     },

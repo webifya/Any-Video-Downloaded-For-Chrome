@@ -185,21 +185,9 @@
     }
   }
 
-  const decorate = () => {
-    for (const row of document.querySelectorAll('#page-video-downloader-panel .pvd-item')) {
-      const meta = row.querySelector('.pvd-meta')?.textContent || '';
-      const b = row.querySelector('button');
-      if (!b || busy) continue;
-      if (meta.includes('HLS Video')) b.textContent = 'Download MP4';
-      else if (isYouTube && /Video|MP4|WebM/i.test(meta) && !/Audio/i.test(meta)) b.textContent = 'Download Video';
-    }
-  };
-  new MutationObserver(decorate).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-
   document.addEventListener('avd:capture-request', e => {
     if (busy) return;
     captureDecodedPageVideo(e.detail?.label || 'video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
   });
 
-  document.addEventListener('avd:lesson-context-changed', () => setTimeout(decorate, 300));
 })();

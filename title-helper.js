@@ -142,22 +142,20 @@
     timer = setTimeout(update, delay);
   }
 
+  const relevant = 'video,iframe,h1,h2,h3,h4,[aria-current],[aria-selected],[aria-checked],[data-active],[data-selected],[data-state]';
   const observer = new MutationObserver(records => {
-    if (records.some(r => r.type === 'childList' || r.type === 'characterData' || r.type === 'attributes')) schedule(220);
+    if (records.some(r => r.type === 'attributes' || (r.type === 'childList' && (r.target?.matches?.(relevant) || [...r.addedNodes].some(n => n.nodeType === 1 && (n.matches?.(relevant) || n.querySelector?.(relevant))))))) schedule(180);
   });
   observer.observe(document.documentElement, {
     subtree: true,
     childList: true,
-    characterData: true,
     attributes: true,
-    attributeFilter: ['class', 'aria-current', 'aria-selected', 'aria-checked', 'data-active', 'data-selected', 'data-state', 'src']
+    attributeFilter: ['aria-current', 'aria-selected', 'aria-checked', 'data-active', 'data-selected', 'data-state', 'src']
   });
 
   document.addEventListener('click', e => {
-    if (e.target.closest('a,button,[role="button"],[role="option"],[role="radio"],[role="listitem"],li')) {
-      schedule(80);
-      setTimeout(update, 350);
-      setTimeout(update, 900);
+    if (e.target.closest('a,[role="link"],[role="option"],[role="radio"],[role="listitem"],[aria-current],[data-lesson-id],[data-lesson],[class*="lesson"]')) {
+      schedule(120);
     }
   }, true);
   addEventListener('popstate', () => schedule(50), true);

@@ -16,6 +16,7 @@ assert.doesNotMatch(title, /setInterval\s*\(/, 'SPA title detection must remain 
 assert.match(navigation, /pushState[\s\S]*replaceState/, 'main-world History API navigation must be detected without reload');
 assert.equal(manifest.content_scripts.some(x => x.world === 'MAIN' && x.js?.includes('spa-navigation-hook.js')), true, 'main-world SPA hook must be wired');
 assert.equal(manifest.permissions.includes('storage'), true, 'session persistence requires the storage permission');
+assert.doesNotMatch(title, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'title tracking must not observe high-frequency page class mutations');
 
 assert.match(youtube, /scheduleProbe/, 'YouTube probing should be debounced');
 assert.doesNotMatch(youtube, /setTimeout\(probe,\s*(?:300|900|1800|3200)/, 'YouTube must not run repeated probe bursts');
@@ -28,6 +29,11 @@ assert.match(hls, /info\.encrypted/, 'encrypted HLS must remain rejected');
 assert.match(content, /HTTP\\s\*403[\s\S]*avd:capture-request/, 'YouTube 403 should trigger decoded-player fallback only after fetch failure');
 assert.doesNotMatch(capture, /const yt = isYouTubeVideoButton/, 'YouTube downloads must not be intercepted before direct fetch is attempted');
 assert.doesNotMatch(capture, /page-video-downloader-panel button/, 'HLS downloads must try the fast offscreen path before page capture');
+assert.doesNotMatch(capture, /new MutationObserver/, 'capture fallback must not install a page-wide UI observer');
 assert.match(content, /i\.kind==='hls'[\s\S]*avd:capture-request/, 'failed HLS conversion should retain decoded-page capture as fallback');
+assert.doesNotMatch(content, /triggerPlayers|\.play\(\)[\s\S]{0,100}Scanning/, 'media scanning must never start page playback');
+assert.doesNotMatch(content, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'media tracking must not observe high-frequency class mutations');
+assert.match(content, /collectDeclarative[\s\S]*og:video[\s\S]*application\/ld\+json/, 'pre-play discovery should inspect bounded declarative media metadata');
+assert.match(youtube, /accessibleFormatUrl/, 'YouTube pre-play probing should accept already-signed cipher URLs without deciphering protected signatures');
 
 console.log('SPA, performance, HLS-output, DRM-boundary, and YouTube fallback regression tests passed');

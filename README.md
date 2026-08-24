@@ -6,9 +6,18 @@
 
 ## Current version
 
-**v2.8.0 — MV3-resilient detection and faster SPA/HLS handling**
+**v2.9.0 — no-hang observers and pre-play download discovery**
 
-v2.8.0 preserves the bounded per-tab media cache through Manifest V3 service-worker suspension, observes programmatic History API navigation in the page's main world, and tries fast HLS assembly/conversion before falling back to real-time page capture.
+v2.9.0 removes high-frequency whole-page mutation work and never starts videos during Scan. It discovers accessible media before playback from HTML video/source attributes, OpenGraph metadata, JSON-LD/bounded player configuration, YouTube player response data, loaded manifests, and the existing network cache.
+
+## v2.9.0 performance and pre-play changes
+
+- No observer watches global `class` or character-data mutations.
+- The capture fallback no longer scans the extension panel on every page mutation.
+- Mutation handling is restricted to added/replaced players, media sources, headings, and explicit lesson-selection attributes.
+- Scan never calls `video.play()` and does not seek, mute, pause, or otherwise disturb the page player.
+- Initial and user-requested scans inspect declarative media URLs that are available before playback.
+- YouTube uses accessible `streamingData` URLs and already-signed cipher URLs; it does not execute signature-deciphering code or bypass access controls.
 
 ## Main features
 
@@ -94,9 +103,9 @@ Large platforms change player delivery methods and signed URLs frequently. The e
 ## How to use
 
 1. Open a webpage containing a video.
-2. Play the video briefly if the site lazy-loads its stream.
+2. Open the downloader; playback is not required when the site exposes its media URL before play.
 3. Click the floating **↓** button.
-4. Click **Scan** if needed.
+4. Click **Scan** if needed. Scanning does not start the player.
 5. Download the detected video.
 6. On a course SPA, click another lesson normally. The extension should detect the change automatically without a browser reload.
 

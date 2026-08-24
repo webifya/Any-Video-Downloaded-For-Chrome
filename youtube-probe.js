@@ -3,6 +3,19 @@
 
   const AUDIO_ITAGS = new Set([139,140,141,171,172,249,250,251,256,258,325,328,599,600]);
 
+  function accessibleFormatUrl(format) {
+    if (format?.url) return format.url;
+    try {
+      const cipher = new URLSearchParams(format?.signatureCipher || format?.cipher || '');
+      const url = cipher.get('url');
+      const signature = cipher.get('sig') || cipher.get('signature');
+      if (!url || !signature || cipher.get('s')) return '';
+      const out = new URL(url);
+      out.searchParams.set(cipher.get('sp') || 'signature', signature);
+      return out.href;
+    } catch (_) { return ''; }
+  }
+
   function emitFromResponse(resp) {
     try {
       const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
@@ -14,7 +27,7 @@
       const items = [];
 
       const add = (f, source, isProgressive) => {
-        const rawUrl = f?.url || '';
+        const rawUrl = accessibleFormatUrl(f);
         if (!rawUrl) return;
         const fullMime = String(f.mimeType || '');
         const mime = fullMime.split(';')[0];

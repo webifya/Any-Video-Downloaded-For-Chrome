@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.9.0 - 2026-08-25
+
+- Removed page-wide observation of high-frequency class and character-data mutations that could hang YouTube and complex SPAs.
+- Removed the capture helper's whole-document mutation observer.
+- Stopped Scan/Download All from automatically playing, muting, pausing, or seeking page videos.
+- Added pre-play discovery from HTML attributes, OpenGraph metadata, JSON-LD, bounded JSON player configuration, and preloaded resource entries.
+- Added support for already-signed YouTube cipher URLs while continuing to reject signatures requiring deciphering/access-control workarounds.
+- Added performance and no-autoplay regression assertions.
+
 ## 2.8.0 - 2026-08-25
 
 - Persisted bounded per-tab media/context state in session-only storage so Manifest V3 worker suspension no longer loses detections.

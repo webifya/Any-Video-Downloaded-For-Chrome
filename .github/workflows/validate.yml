@@ -37,7 +37,7 @@ jobs:
           const fs = require('fs');
           const m = require('./manifest.json');
           if (m.manifest_version !== 3) throw new Error('Manifest must be v3');
-          if (m.version !== '2.8.0') throw new Error('Unexpected release version');
+          if (m.version !== '2.9.0') throw new Error('Unexpected release version');
           if (!m.permissions.includes('declarativeNetRequestWithHostAccess')) throw new Error('Missing signed-CDN request-context permission');
           if (!m.permissions.includes('storage')) throw new Error('Missing MV3 session-persistence permission');
           if (m.background?.service_worker !== 'background.js') throw new Error('Background bootstrap is not wired');

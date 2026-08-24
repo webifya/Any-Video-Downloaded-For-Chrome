@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Any Video Downloader",
-  "version": "2.3.1",
-  "description": "Detect and download accessible videos from web pages, including direct files, unencrypted HLS, and DASH/adaptive streams.",
+  "version": "2.4.0",
+  "description": "Detect and download accessible videos from web pages, including direct files, unencrypted HLS, and DASH/adaptive streams with local audio/video merging.",
   "permissions": ["downloads", "offscreen", "webRequest"],
   "host_permissions": ["<all_urls>"],
   "background": {"service_worker": "service-worker.js"},

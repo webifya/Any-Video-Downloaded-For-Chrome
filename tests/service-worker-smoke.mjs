@@ -72,4 +72,20 @@ await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [
 const meta = await message({ type: 'GET_MEDIA_CANDIDATES' });
 assert.equal(meta.items.length, 1, 'Meta byte-range variants should deduplicate to one media candidate');
 
+await message({ type: 'CLEAR_MEDIA_CANDIDATES' });
+await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson One', url: 'https://course.test/lesson' });
+await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [
+  { url: 'https://cdn.course.test/video.mp4?token=signed&range=0-0', kind: 'video', contentLength: 0 },
+  { url: 'https://cdn.course.test/video.mp4?token=signed&range=1-999', kind: 'video', totalLength: 50000 }
+] });
+let lesson = await message({ type: 'GET_MEDIA_CANDIDATES' });
+assert.equal(lesson.items.length, 1, 'generic zero-size/range observations should deduplicate');
+assert.equal(lesson.items[0].totalLength, 50000, 'later useful size metadata should upgrade a zero-size observation');
+await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson One', url: 'https://course.test/lesson' });
+lesson = await message({ type: 'GET_MEDIA_CANDIDATES' });
+assert.equal(lesson.items.length, 1, 'repeated context events must not erase current-lesson media');
+await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson Two', url: 'https://course.test/lesson' });
+lesson = await message({ type: 'GET_MEDIA_CANDIDATES' });
+assert.equal(lesson.items.length, 0, 'a true SPA lesson change should clear stale media exactly once');
+
 console.log('service-worker smoke tests passed');

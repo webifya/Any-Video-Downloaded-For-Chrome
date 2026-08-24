@@ -189,18 +189,10 @@
     return button.closest('.pvd-item')?.querySelector('.pvd-meta')?.textContent || '';
   }
   function isHlsRowButton(button) { return rowMeta(button).includes('HLS Video'); }
-  function isYouTubeVideoButton(button) {
-    if (!isYouTube) return false;
-    if (!button.closest('.pvd-item')) return false;
-    const meta = rowMeta(button);
-    return /Video|MP4|WebM/i.test(meta) && !/Audio/i.test(meta);
-  }
   function isSingleVideoDownloadAll(button) {
     if (button.id !== 'page-video-downloader-all') return false;
     const panel = button.closest('#page-video-downloader-panel');
     const rows = [...(panel?.querySelectorAll('.pvd-item') || [])];
-    if (rows.length !== 1 && !isYouTube) return false;
-    if (isYouTube) return rows.some(row => /Video|MP4|WebM/i.test(row.querySelector('.pvd-meta')?.textContent || '') && !/Audio/i.test(row.querySelector('.pvd-meta')?.textContent || ''));
     return rows.length === 1 && rows[0].querySelector('.pvd-meta')?.textContent?.includes('HLS Video');
   }
 
@@ -219,17 +211,20 @@
     const button = e.target.closest('#page-video-downloader-panel button');
     if (!button || busy) return;
     const hls = isHlsRowButton(button);
-    const yt = isYouTubeVideoButton(button);
     const all = isSingleVideoDownloadAll(button);
-    if (!hls && !yt && !all) return;
+    if (!hls && !all) return;
 
-    // HLS: avoid raw .ts. YouTube: avoid signed googlevideo refetches that can return 403.
-    // Record the already-authorized, already-decoded page player instead.
+    // Record the already-authorized, already-decoded HLS player into MP4/WebM.
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    captureDecodedPageVideo(isYouTube ? 'YouTube video' : 'HLS video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
+    captureDecodedPageVideo('HLS video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
   }, true);
+
+  document.addEventListener('avd:capture-request', e => {
+    if (busy) return;
+    captureDecodedPageVideo(e.detail?.label || 'video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
+  });
 
   document.addEventListener('avd:lesson-context-changed', () => setTimeout(decorate, 300));
 })();

@@ -108,13 +108,22 @@
       const r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MERGED_MEDIA',video:option.video,audio:option.audio,filenameBase:pageTitle(),pageUrl:location.href});
       if(!r?.ok)throw new Error(r?.error||'Local merge failed');setStatus(r.message||'Merged download complete.');return;
     }
-    const i=option.item;const r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MEDIA',url:i.url,kind:i.kind,mime:i.mime,filenameBase:pageTitle(),pageUrl:location.href});if(!r?.ok)throw new Error(r?.error||'Download failed');setStatus(r.message||'Download started.');
+    const i=option.item;const r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MEDIA',url:i.url,kind:i.kind,mime:i.mime,filenameBase:pageTitle(),pageUrl:location.href});
+    if(!r?.ok){
+      if(/(?:^|\.)youtube\.com$/i.test(location.hostname)&&/googlevideo\.com/i.test(i.url||'')&&/(?:HTTP\s*403|expired|unavailable|tiny)/i.test(r?.error||'')){
+        document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'YouTube video'}}));
+        setStatus('Signed YouTube URL expired; using the already-decoded page video fallback…');
+        return;
+      }
+      throw new Error(r?.error||'Download failed');
+    }
+    setStatus(r.message||'Download started.');
   }
   async function downloadAll(){if(state.downloading)return;state.downloading=true;disable(true);try{await scan(true);const pl=plan();if(!pl.primary&&!pl.audioOnly)throw new Error('No downloadable media detected.');if(pl.primary)await downloadOption(pl.primary);if(pl.audioOnly&&pl.primary?.mode!=='merged'){await sleep(250);await downloadOption(pl.audioOnly);}setStatus('Finished.');}catch(e){setStatus(`Download failed: ${e.message||e}`);}finally{state.downloading=false;state.currentLabel='';disable(false);}}
 
   chrome.runtime.onMessage.addListener(msg=>{if(msg?.type!=='DOWNLOAD_PROGRESS')return;const wrap=document.getElementById('page-video-downloader-progress-wrap'),bar=document.getElementById('page-video-downloader-progress'),status=document.getElementById('page-video-downloader-status');if(!wrap||!bar||!status)return;wrap.style.display='block';bar.value=Math.max(0,Math.min(100,Number(msg.percent)||0));status.textContent=`${state.currentLabel?state.currentLabel+': ':''}${msg.text||Math.round(bar.value)+'%'}`;});
 
-  async function resetPage(){state.epoch=Date.now();state.candidates.clear();state.lastNetworkPull=0;try{await chrome.runtime.sendMessage({type:'CLEAR_MEDIA_CANDIDATES'});}catch(_){}if(state.panelOpen){render();setStatus(`Page/video changed — waiting for ${pageTitle()}…`);}await sleep(750);await pullNetwork(true);if(state.panelOpen)render();}
+  async function resetPage(){state.epoch=Date.now();state.candidates.clear();state.lastNetworkPull=0;try{await chrome.runtime.sendMessage({type:'PAGE_MEDIA_CONTEXT',title:pageTitle(),url:location.href});}catch(_){}if(state.panelOpen){render();setStatus(`Page/video changed — waiting for ${pageTitle()}…`);}await sleep(350);await pullNetwork(true);if(state.panelOpen)render();}
   function checkPage(){const sig=signature();if(!state.pageSignature){state.pageSignature=sig;return;}if(sig===state.pageSignature)return;state.pageSignature=sig;clearTimeout(state.changeTimer);state.changeTimer=setTimeout(resetPage,300);}
   function schedule(delay=450){clearTimeout(state.changeTimer);state.changeTimer=setTimeout(()=>{checkPage();collectDom();},delay);}
   const observer=new MutationObserver(ms=>{if(ms.some(m=>m.type==='attributes'||(m.type==='childList'&&m.addedNodes.length)))schedule(500);});

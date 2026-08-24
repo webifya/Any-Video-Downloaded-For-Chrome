@@ -1,4 +1,4 @@
-# Any Video Downloader v2.5.0 Technical Audit
+# Any Video Downloader v2.7.0 Technical Audit
 
 ## Scope
 
@@ -10,8 +10,8 @@ The extension was reviewed for self-hosted media, GoHighLevel/course platforms, 
 2. `content.js` determines the current page/lesson title, selects one primary video action, pairs separate audio when required, and resets state on SPA/video changes.
 3. `youtube-probe.js` reads accessible YouTube `streamingData` and reports progressive/adaptive, audio/video, resolution and bitrate metadata.
 4. `youtube-listener.js` bridges those candidates to the extension service worker.
-5. `offscreen-v2.js` is the v2.5 media processor. It validates signed direct media, recovers incomplete byte-range downloads, assembles unencrypted HLS/DASH and locally combines accessible adaptive video/audio tracks.
-6. `offscreen.html` loads only the active v2.5 processor.
+5. `offscreen-v2.js` is the media processor. It validates signed direct media, recovers incomplete byte-range downloads, assembles unencrypted HLS/DASH and locally combines accessible adaptive video/audio tracks.
+6. `offscreen.html` loads only the active processor.
 
 ## Major fixes
 
@@ -21,7 +21,7 @@ Facebook, Instagram, YouTube, Vimeo and other CDNs frequently issue many byte ra
 
 ### Partial `206` downloads
 
-A detected CDN URL is not automatically assumed to represent the complete file. The v2.5 processor parses `Content-Range`; if the initial media response is partial, it requests the remaining byte ranges and assembles a complete Blob. Tiny, HTML, JSON, XML and obviously expired responses are rejected instead of being saved as video files.
+A detected CDN URL is not automatically assumed to represent the complete file. The processor parses `Content-Range`; if the initial media response is partial, it requests the remaining byte ranges and assembles a complete Blob. Tiny, HTML, JSON, XML and obviously expired responses are rejected instead of being saved as video files.
 
 This directly addresses cases where Chrome previously displayed “file wasn't available on site” or where a detected video produced only a small/partial file.
 
@@ -31,7 +31,7 @@ Volatile range parameters are removed before extension-local fetch, while the or
 
 ### SPA/course lesson changes
 
-The current page/lesson/video signature is monitored with debounced navigation and DOM events. Old candidates are cleared before the newly selected lesson is scanned, preventing a previous lesson video from being offered after JavaScript-only navigation.
+The current page/lesson/video signature is monitored with debounced navigation, DOM, History API and player events. A service-worker context key clears old candidates exactly once, preventing both stale previous-lesson results and the former race that erased early requests from a new lesson. No recurring full-page scan is used.
 
 ### Separate video and audio
 
@@ -43,7 +43,7 @@ If the browser cannot decode/record a particular codec pair, the successfully fe
 
 ### HLS
 
-The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode them. MPEG-TS data is saved with a truthful `.ts` fallback rather than being mislabeled as MP4.
+The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode them. fMP4 output remains MP4; assembled MPEG-TS is decoded and recorded into a genuine MP4 or WebM container. Raw `.ts` is never saved. If Chrome lacks a compatible decoder/recorder, the extension reports the limitation rather than creating a corrupt or mislabeled file.
 
 ### DASH
 
@@ -51,11 +51,11 @@ DASH handling covers `SegmentTemplate`, `SegmentTimeline`, bounded negative time
 
 ### Memory behavior
 
-The old processor repeatedly converted/concatenated large typed arrays. v2.5 assembles recovered ranges and segmented media primarily as Blob parts, reducing duplicate in-memory copies. Browser/device resource limits still apply to very large media.
+The old processor repeatedly converted/concatenated large typed arrays. The current processor assembles recovered ranges and segmented media primarily as Blob parts, reducing duplicate in-memory copies. Browser/device resource limits still apply to very large media.
 
 ### Performance
 
-There is no recurring full-page deep media scan loop. Heavy scanning is user initiated, DOM checks are debounced, Performance API inspection is bounded, and the network candidate cache is capped.
+There is no recurring full-page deep media scan loop. Heavy scanning is user initiated, DOM checks are debounced, Performance API inspection is bounded, the network candidate cache is capped, and YouTube probes are coalesced instead of running timed retry bursts.
 
 ## Expected compatibility
 
@@ -73,4 +73,4 @@ DRM or access-control bypass is intentionally outside the extension's behavior.
 
 ## Validation
 
-The repository validation workflow checks JavaScript syntax for `service-worker.js`, `content.js`, `offscreen-v2.js`, `youtube-listener.js`, `youtube-probe.js` and the smoke-test file; parses the Manifest V3 JSON; verifies that `offscreen.html` loads the v2.5 processor; and runs service-worker smoke tests for adaptive routing, YouTube metadata preservation and Meta byte-range deduplication.
+The validation workflow checks every extension/test script, parses and asserts the Manifest V3 wiring/version, and runs service-worker selection/context/deduplication tests, signed partial-range recovery, and regressions for event-driven SPA switching, YouTube probe/fallback behavior, HLS container guarantees, and DRM boundaries.

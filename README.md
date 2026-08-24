@@ -6,9 +6,9 @@
 
 ## Current version
 
-**v2.6.0 — SPA lesson tracking + playable HLS output**
+**v2.7.0 — event-driven SPA tracking, signed-media recovery, and container-safe HLS**
 
-v2.6.0 focuses on two real-world course-platform problems: JavaScript-only lesson changes that do not reload the page, and HLS lessons that previously fell back to raw `.ts` downloads.
+v2.7.0 completes the cross-platform audit: lesson/video changes are handled through DOM, History API, player, and navigation events; signed range URLs are recovered and deduplicated; YouTube decoded capture is used only after an expired/403 direct URL; and no HLS path saves raw `.ts` output.
 
 ## Main features
 
@@ -30,7 +30,7 @@ v2.6.0 focuses on two real-world course-platform problems: JavaScript-only lesso
 - Live download/recording progress.
 - No remote executable code or remote conversion server.
 
-## v2.6.0 course / SPA changes
+## v2.7.0 course / SPA changes
 
 The lesson-context detector now checks several independent signals instead of relying only on the URL:
 
@@ -40,13 +40,13 @@ The lesson-context detector now checks several independent signals instead of re
 - course breadcrumbs;
 - current sidebar lesson states;
 - main lesson headings;
-- URL changes, DOM changes, text changes, and a lightweight periodic SPA context check.
+- URL changes, DOM changes, text changes, History API calls, and player/navigation events.
 
-When the detected lesson changes, the extension immediately updates its internal current-title marker and clears media candidates from the previous lesson. This is intended for GHL/ClientClub, DigitalMarketer-style course applications, React/Vue/Next SPAs, and similar JavaScript navigation systems.
+When the detected lesson changes, the extension performs one atomic context switch in the service worker. Repeated events for the same lesson do not clear newly detected media. This is intended for GHL/ClientClub, DigitalMarketer-style course applications, React/Vue/Next SPAs, and similar JavaScript navigation systems.
 
 ## HLS `.ts` behavior
 
-Older builds could correctly download an HLS lesson but save the assembled MPEG-TS stream as `.ts`. v2.6.0 adds a page-decoded capture path for visible HLS players:
+Older builds could correctly download an HLS lesson but save the assembled MPEG-TS stream as `.ts`. v2.7.0 uses a page-decoded capture path for visible HLS players:
 
 1. Find the active visible `<video>` element.
 2. Seek the lesson to the beginning.
@@ -57,7 +57,7 @@ Older builds could correctly download an HLS lesson but save the assembled MPEG-
 
 This capture path runs approximately at playback speed because it records the decoded media locally. It avoids simply renaming MPEG-TS bytes to `.mp4`, which would create a broken file.
 
-If a page has no capturable HTML video element, the lower-level HLS processor remains available as a fallback.
+If a page has no capturable HTML video element, the lower-level HLS processor assembles fMP4 directly or converts MPEG-TS through Chrome's decoder/MediaRecorder. If Chrome cannot decode or record the stream, the operation fails clearly and does not save a misleading `.mp4` or a raw `.ts` file.
 
 ## Platform coverage
 
@@ -102,7 +102,7 @@ For HLS course videos, the button may display **Download MP4**. During page-deco
 
 ## Signed CDN / partial-download recovery
 
-For supported signed CDN media the extension can detect `206 Partial Content`, parse `Content-Range`, and rebuild a complete file with controlled byte-range requests. This is particularly useful for `googlevideo.com`, `fbcdn.net`, `cdninstagram.com`, Vimeo CDN, and similar delivery systems.
+For supported signed CDN media the extension can detect `206 Partial Content`, parse `Content-Range`, and rebuild a complete file with controlled byte-range requests. It retains the original signed URL as a fallback and deduplicates URL-level range observations. On YouTube, decoded page capture is attempted only after an expired/403 Googlevideo fetch, avoiding unnecessary page playback disruption.
 
 ## Permissions
 

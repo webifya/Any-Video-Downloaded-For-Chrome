@@ -124,10 +124,9 @@ const AVD = (() => {
   function extensionFor(mime = '', kind = 'video', sourceUrl = '') {
     try {
       const p = new URL(sourceUrl).pathname.toLowerCase();
-      for (const ext of ['.mp4', '.webm', '.mov', '.m4v', '.m4a', '.aac', '.mp3', '.opus', '.ogg', '.ts']) if (p.endsWith(ext)) return ext;
+      for (const ext of ['.mp4', '.webm', '.mov', '.m4v', '.m4a', '.aac', '.mp3', '.opus', '.ogg']) if (p.endsWith(ext)) return ext;
     } catch (_) {}
     const m = String(mime).toLowerCase();
-    if (/mp2t/.test(m)) return '.ts';
     if (kind === 'audio') {
       if (/webm|opus|ogg/.test(m)) return '.webm';
       if (/mpeg|mp3/.test(m)) return '.mp3';
@@ -231,9 +230,64 @@ const AVD = (() => {
     }
   }
 
+  async function transcodeTransportStream(input, filenameBase, tabId) {
+    if (typeof MediaRecorder === 'undefined') throw new Error('Chrome cannot convert this HLS transport stream in this build.');
+    const localUrl = URL.createObjectURL(input);
+    const video = document.createElement('video');
+    video.preload = 'auto'; video.playsInline = true; video.src = localUrl; video.style.display = 'none';
+    document.body.appendChild(video);
+    let recorder, progressTimer;
+    try {
+      await waitMetadata(video);
+      if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error('Chrome could not determine the HLS video duration.');
+      const capture = video.captureStream?.bind(video) || video.webkitCaptureStream?.bind(video);
+      if (!capture) throw new Error('Chrome cannot capture the decoded HLS stream in this build.');
+      await video.play();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const stream = capture();
+      if (!stream.getVideoTracks().length) throw new Error('The assembled HLS stream has no decodable video track.');
+      video.pause(); video.currentTime = 0;
+      const type = recorderMime();
+      if (!type) throw new Error('Chrome exposes no MP4 or WebM recorder for HLS conversion.');
+      recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 10000000, audioBitsPerSecond: 192000 });
+      const chunks = [];
+      const stopped = new Promise((resolve, reject) => {
+        recorder.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
+        recorder.onerror = e => reject(e.error || new Error('HLS conversion recorder failed.'));
+        recorder.onstop = resolve;
+      });
+      recorder.start(1000);
+      await video.play();
+      progressTimer = setInterval(() => {
+        const pct = Math.max(32, Math.min(97, Math.round(32 + ((video.currentTime || 0) / video.duration) * 65)));
+        report(tabId, pct, 'hls-convert', video.currentTime || 0, video.duration, `Converting HLS to a playable container… ${pct}%`);
+      }, 1000);
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('HLS conversion exceeded expected duration.')), Math.max(30000, (video.duration + 30) * 1000));
+        video.addEventListener('ended', () => { clearTimeout(timer); resolve(); }, { once:true });
+        video.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Chrome could not decode the HLS transport stream.')); }, { once:true });
+      });
+      if (recorder.state !== 'inactive') recorder.stop();
+      await stopped;
+      const outType = recorder.mimeType || type;
+      const output = new Blob(chunks, { type: outType });
+      if (output.size < 32768) throw new Error('HLS conversion produced an unexpectedly small file.');
+      const ext = /mp4/i.test(outType) ? '.mp4' : '.webm';
+      const filename = `${filenameBase}${ext}`;
+      saveBlob(output, filename);
+      report(tabId, 100, 'done', output.size, output.size, `Complete — ${filename}`);
+      return { ok:true, message:`Downloaded ${filename}` };
+    } finally {
+      if (progressTimer) clearInterval(progressTimer);
+      try { if (recorder?.state && recorder.state !== 'inactive') recorder.stop(); video.pause(); video.remove(); } catch (_) {}
+      URL.revokeObjectURL(localUrl);
+    }
+  }
+
   async function downloadDirect(msg) {
     report(msg.tabId, 2, 'direct', 0, 0, `Preparing ${msg.kind === 'audio' ? 'audio' : 'video'} download…`);
     const media = await fetchCompleteMedia({ url: msg.url, originalUrl: msg.originalUrl, mime: msg.mime, kind: msg.kind }, msg.tabId, `Downloading ${msg.kind === 'audio' ? 'audio' : 'video'}`, 3, 97);
+    if (/mp2t/i.test(media.mime)) throw new Error('Raw MPEG-TS cannot be saved directly; download the HLS playlist for MP4/WebM conversion.');
     const ext = extensionFor(media.mime, msg.kind, msg.url);
     const filename = `${msg.filenameBase}${msg.kind === 'audio' ? ' - audio' : ''}${ext}`;
     saveBlob(media.blob, filename);
@@ -324,7 +378,8 @@ const AVD = (() => {
     if (!master.variants.length) {
       const info = parseHlsMedia(text, msg.url);
       const blob = await hlsTrackBlob(info, msg.tabId, 'video', 3, 97);
-      const ext = /mp2t/.test(blob.type) ? '.ts' : '.mp4';
+      if (/mp2t/.test(blob.type)) return transcodeTransportStream(blob, msg.filenameBase, msg.tabId);
+      const ext = '.mp4';
       saveBlob(blob, `${msg.filenameBase}${ext}`);
       report(msg.tabId, 100, 'done', blob.size, blob.size, `Complete — ${msg.filenameBase}${ext}`);
       return { ok: true, message: `Downloaded ${msg.filenameBase}${ext}` };
@@ -339,12 +394,14 @@ const AVD = (() => {
       const audio = await hlsTrackBlob(aInfo, msg.tabId, 'audio', 19, 30);
       try { return await recordCombined(video, audio, msg.filenameBase, msg.tabId, variant.bandwidth); }
       catch (e) {
-        saveBlob(video, `${msg.filenameBase}${/mp2t/.test(video.type) ? '.ts' : '.mp4'}`);
+        if (/mp2t/.test(video.type)) throw new Error(`${e.message} No raw .ts file was saved; use the page-decoded capture fallback.`);
+        saveBlob(video, `${msg.filenameBase}.mp4`);
         saveBlob(audio, `${msg.filenameBase} - audio${/aac/.test(audio.type) ? '.aac' : '.m4a'}`);
-        throw new Error(`${e.message} Valid HLS tracks were saved separately as a fallback.`);
+        throw new Error(`${e.message} Valid non-TS HLS tracks were saved separately as a fallback.`);
       }
     }
-    const ext = /mp2t/.test(video.type) ? '.ts' : '.mp4';
+    if (/mp2t/.test(video.type)) return transcodeTransportStream(video, msg.filenameBase, msg.tabId);
+    const ext = '.mp4';
     saveBlob(video, `${msg.filenameBase}${ext}`);
     report(msg.tabId, 100, 'done', video.size, video.size, `Complete — ${msg.filenameBase}${ext}`);
     return { ok: true, message: `Downloaded ${msg.filenameBase}${ext}` };

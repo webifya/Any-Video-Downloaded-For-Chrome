@@ -1,6 +1,7 @@
 const OFFSCREEN_URL = 'offscreen.html';
 let creatingOffscreen;
 const mediaByTab = new Map();
+const contextByTab = new Map();
 
 const VIDEO_EXT_RE = /\.(?:mp4|m4v|webm|mov)(?:$|[?#])/i;
 const AUDIO_EXT_RE = /\.(?:m4a|aac|mp3|opus|ogg)(?:$|[?#])/i;
@@ -77,6 +78,9 @@ function canonicalMediaKey(item) {
       for (const k of ['token','sig','signature','expires','exp']) c.searchParams.delete(k);
       return `${item.kind}:${c.origin}${c.pathname}`;
     }
+    // Players commonly express one logical file as many URL-level byte ranges.
+    // Ignore only range selectors here; retain tokens/signatures and all identity params.
+    for (const k of ['range','rn','rbuf','bytestart','byteend','start','end']) u.searchParams.delete(k);
     return `${item.kind}:${u.href.split('#')[0]}`;
   } catch (_) { return `${item.kind}:${item.url}`; }
 }
@@ -133,8 +137,10 @@ chrome.webRequest.onHeadersReceived.addListener(details => {
   upsert(details.tabId, { url: details.url, kind, mime, contentLength, totalLength, contentDisposition, requestType: details.type || '', frameId: details.frameId, source: 'response' });
 }, REQUEST_FILTER, ['responseHeaders']);
 
-chrome.tabs.onRemoved.addListener(tabId => mediaByTab.delete(tabId));
-chrome.tabs.onUpdated.addListener((tabId, info) => { if (info.status === 'loading') mediaByTab.delete(tabId); });
+chrome.tabs.onRemoved.addListener(tabId => { mediaByTab.delete(tabId); contextByTab.delete(tabId); });
+chrome.tabs.onUpdated.addListener((tabId, info) => {
+  if (info.status === 'loading') { mediaByTab.delete(tabId); contextByTab.delete(tabId); }
+});
 
 async function ensureOffscreen() {
   const url = chrome.runtime.getURL(OFFSCREEN_URL);
@@ -185,6 +191,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg?.type === 'CLEAR_MEDIA_CANDIDATES') {
     const tabId = sender.tab?.id; if (Number.isInteger(tabId)) mediaByTab.delete(tabId); sendResponse({ ok: true }); return;
+  }
+  if (msg?.type === 'PAGE_MEDIA_CONTEXT') {
+    const tabId = sender.tab?.id;
+    if (!Number.isInteger(tabId)) { sendResponse({ ok:false }); return; }
+    const key = `${String(msg.url || sender.tab?.url || '').split('#')[0]}|${String(msg.title || '').trim().toLowerCase()}`;
+    if (key && contextByTab.get(tabId) !== key) {
+      contextByTab.set(tabId, key);
+      mediaByTab.delete(tabId);
+    }
+    sendResponse({ ok:true, context:key });
+    return;
   }
   if (msg?.type === 'MEDIA_PROGRESS' && Number.isInteger(msg.tabId)) {
     chrome.tabs.sendMessage(msg.tabId, { type: 'DOWNLOAD_PROGRESS', percent: msg.percent, phase: msg.phase, current: msg.current, total: msg.total, text: msg.text }).catch(() => {}); return;

@@ -59,20 +59,19 @@
     } catch (_) {}
   }
 
-  probe();
-  setTimeout(probe, 300);
-  setTimeout(probe, 900);
-  setTimeout(probe, 1800);
-  setTimeout(probe, 3200);
+  let scheduled = 0;
+  const scheduleProbe = (delay = 120) => {
+    clearTimeout(scheduled);
+    scheduled = setTimeout(probe, delay);
+  };
+
+  scheduleProbe(0);
 
   const onNavigate = () => {
-    setTimeout(probe, 200);
-    setTimeout(probe, 700);
-    setTimeout(probe, 1500);
-    setTimeout(probe, 2800);
+    scheduleProbe(120);
   };
 
   window.addEventListener('yt-navigate-finish', onNavigate, true);
   window.addEventListener('yt-page-data-updated', onNavigate, true);
-  document.addEventListener('loadedmetadata', probe, true);
+  document.addEventListener('loadedmetadata', () => scheduleProbe(0), true);
 })();

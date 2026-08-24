@@ -115,7 +115,6 @@
   async function publish(title) {
     if (!title || title === lastTitle) return;
     const marker = ensureMarker();
-    const hadPrevious = !!lastTitle;
     lastTitle = title;
     marker.textContent = title;
 
@@ -124,10 +123,9 @@
     marker.setAttribute('aria-current', 'page');
     marker.setAttribute('data-avd-title-version', String(Date.now()));
 
-    if (hadPrevious) {
-      // Do not let the previous lesson's HLS/MP4 requests survive a JS-only lesson transition.
-      try { await chrome.runtime.sendMessage({ type: 'CLEAR_MEDIA_CANDIDATES' }); } catch (_) {}
-    }
+    // Atomically identify the new context and clear the old context once. This avoids
+    // erasing early requests from the new player during a JS-only lesson transition.
+    try { await chrome.runtime.sendMessage({ type: 'PAGE_MEDIA_CONTEXT', title, url: location.href }); } catch (_) {}
     document.dispatchEvent(new CustomEvent('avd:lesson-context-changed', { detail: { title, url: location.href } }));
   }
 
@@ -165,14 +163,16 @@
   addEventListener('popstate', () => schedule(50), true);
   addEventListener('hashchange', () => schedule(50), true);
 
-  // Lightweight context check catches React/Vue/Next/GHL route changes that mutate no watched attribute.
-  setInterval(() => {
-    if (location.href !== lastUrl) update();
-    else {
-      const t = currentTitle();
-      if (t && t !== lastTitle) publish(t);
-    }
-  }, 700);
+  // Observe History API navigation without a recurring page scan.
+  for (const method of ['pushState', 'replaceState']) {
+    const original = history[method];
+    if (typeof original !== 'function') continue;
+    history[method] = function(...args) {
+      const result = original.apply(this, args);
+      schedule(0);
+      return result;
+    };
+  }
 
   ensureMarker();
   update();

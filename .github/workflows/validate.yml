@@ -16,6 +16,10 @@ jobs:
           node-version: '22'
       - name: Check JavaScript syntax
         run: |
+          node --check background.js
+          node --check header-rules.js
+          node --check title-helper.js
+          node --check ts-to-playable.js
           node --check service-worker.js
           node --check content.js
           node --check offscreen-v2.js
@@ -31,11 +35,12 @@ jobs:
           const fs = require('fs');
           const m = require('./manifest.json');
           if (m.manifest_version !== 3) throw new Error('Manifest must be v3');
-          if (!m.version) throw new Error('Missing version');
-          if (!Array.isArray(m.permissions)) throw new Error('Missing permissions');
+          if (m.version !== '2.5.1') throw new Error('Unexpected release version');
+          if (!m.permissions.includes('declarativeNetRequestWithHostAccess')) throw new Error('Missing signed-CDN request-context permission');
+          if (m.background?.service_worker !== 'background.js') throw new Error('Background bootstrap is not wired');
           const html = fs.readFileSync('offscreen.html','utf8');
-          if (!html.includes('offscreen-v2.js')) throw new Error('offscreen.html does not load offscreen-v2.js');
-          if (!fs.existsSync('offscreen-v2.js')) throw new Error('Missing offscreen-v2.js');
+          if (!html.includes('ts-to-playable.js') || !html.includes('offscreen-v2.js')) throw new Error('Offscreen conversion pipeline is incomplete');
+          for (const f of ['background.js','header-rules.js','title-helper.js','ts-to-playable.js','offscreen-v2.js']) if (!fs.existsSync(f)) throw new Error(`Missing ${f}`);
           if (fs.existsSync('offscreen.js')) throw new Error('Obsolete offscreen.js should not remain in package');
           if (fs.existsSync('format-guard.js')) throw new Error('Obsolete format-guard.js should not remain in package');
           console.log(`Any Video Downloader ${m.version} validated`);

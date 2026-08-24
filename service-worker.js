@@ -90,6 +90,18 @@ function canonicalMediaKey(item) {
 }
 
 function sessionKey(tabId) { return `${SESSION_PREFIX}${tabId}`; }
+function isExpiredMediaUrl(item, now = Date.now()) {
+  try {
+    const u = new URL(item?.url || '');
+    const raw = u.searchParams.get('expire') || u.searchParams.get('expires') || u.searchParams.get('exp') || '';
+    if (raw && /^\d+$/.test(raw)) {
+      const value = Number(raw);
+      const expiresAt = value > 100000000000 ? value : value * 1000;
+      if (expiresAt <= now + 60000) return true;
+    }
+  } catch (_) {}
+  return Number(item?.seenAt || 0) > 0 && Number(item.seenAt) < now - 4 * 60 * 60 * 1000;
+}
 function compactItem(item) {
   return {
     url:item.url, originalUrl:item.originalUrl || '', kind:item.kind, mime:item.mime || '', source:item.source || '',
@@ -115,7 +127,7 @@ async function restoreTab(tabId) {
       const value = (await chrome.storage.session.get(sessionKey(tabId)))?.[sessionKey(tabId)];
       if (value?.context) contextByTab.set(tabId, value.context);
       if (!mediaByTab.has(tabId) && Array.isArray(value?.items)) {
-        for (const item of value.items.slice(0, 60).reverse()) upsert(tabId, item, false);
+        for (const item of value.items.slice(0, 60).filter(item => !isExpiredMediaUrl(item)).reverse()) upsert(tabId, item, false);
       }
     } catch (_) {}
     finally { loadedTabs.add(tabId); restorePromises.delete(tabId); }
@@ -234,7 +246,7 @@ function serializeMedia(item = {}) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'GET_MEDIA_CANDIDATES') {
     const tabId = sender.tab?.id;
-    (async () => { if (Number.isInteger(tabId)) await restoreTab(tabId); sendResponse({ ok:true, items:Number.isInteger(tabId) ? (mediaByTab.get(tabId) || []) : [] }); })();
+    (async () => { if (Number.isInteger(tabId)) await restoreTab(tabId);const items=Number.isInteger(tabId)?(mediaByTab.get(tabId)||[]).filter(item=>!isExpiredMediaUrl(item)):[];if(Number.isInteger(tabId)&&items.length!==(mediaByTab.get(tabId)||[]).length){mediaByTab.set(tabId,items);queuePersist(tabId);}sendResponse({ok:true,items}); })();
     return true;
   }
   if (msg?.type === 'UPSERT_MEDIA_CANDIDATES') {

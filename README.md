@@ -6,9 +6,11 @@
 
 ## Current version
 
-**v2.9.0 — no-hang observers and pre-play download discovery**
+**v2.9.1 — fresh YouTube URLs without recorder timeouts**
 
-v2.9.0 removes high-frequency whole-page mutation work and never starts videos during Scan. It discovers accessible media before playback from HTML video/source attributes, OpenGraph metadata, JSON-LD/bounded player configuration, YouTube player response data, loaded manifests, and the existing network cache.
+v2.9.1 removes automatic real-time YouTube page recording. Immediately before a YouTube download, the extension requests the current player response again, replaces cached signed URLs, removes expired streams, and retries one fresh download. If YouTube exposes no usable URL, it reports that boundary promptly instead of recording for the video's duration and eventually timing out.
+
+Web services that accept a pasted YouTube URL commonly use a remote extraction/conversion workflow. This extension remains local-only and does not send viewing URLs to an undisclosed third-party conversion server.
 
 ## v2.9.0 performance and pre-play changes
 

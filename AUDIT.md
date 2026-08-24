@@ -1,4 +1,4 @@
-# Any Video Downloader v2.9.0 Technical Audit
+# Any Video Downloader v2.9.1 Technical Audit
 
 ## Scope
 
@@ -60,6 +60,8 @@ The old processor repeatedly converted/concatenated large typed arrays. The curr
 There is no recurring full-page scan loop and no observer watches global class or text mutations. DOM callbacks are filtered to relevant player/source/lesson nodes before scheduling a debounced check. Declarative configuration parsing is bounded by byte and node budgets, Performance API inspection is bounded, the network cache is capped, and YouTube probes are coalesced.
 
 Scan and Download All never start page playback. Pre-play detection uses accessible DOM attributes, OpenGraph, JSON-LD/bounded JSON configuration, YouTube player response data, already-loaded manifests, and observed requests. A site that creates its only media URL after a genuine user play action cannot be detected beforehand without changing or bypassing that site's behavior.
+
+YouTube downloads refresh the current player response immediately before fetching and retry a newly selected signed stream once. Explicitly expired and stale session URLs are pruned. Real-time decoded-page capture is not used for YouTube, preventing full-video waits and capture-duration timeouts. Unlike URL-paste web downloaders, this extension has no remote extraction/conversion backend; URLs are not submitted to a third-party service.
 
 ## Expected compatibility
 

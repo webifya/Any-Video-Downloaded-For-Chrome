@@ -26,7 +26,8 @@ assert.doesNotMatch(hls, /saveBlob\([^\n]*\.ts/, 'the offscreen engine must neve
 assert.match(hls, /ContentProtection/, 'DASH content protection must remain rejected');
 assert.match(hls, /info\.encrypted/, 'encrypted HLS must remain rejected');
 
-assert.match(content, /HTTP\\s\*403[\s\S]*avd:capture-request/, 'YouTube 403 should trigger decoded-player fallback only after fetch failure');
+assert.match(content, /avd:youtube-refresh[\s\S]*DOWNLOAD_MEDIA[\s\S]*avd:youtube-refresh/, 'YouTube downloads should refresh signed streams and retry once');
+assert.doesNotMatch(content, /YouTube video['"]?\}\}\)\)|detail:\{label:'YouTube video'/, 'YouTube failure must not start the real-time capture fallback');
 assert.doesNotMatch(capture, /const yt = isYouTubeVideoButton/, 'YouTube downloads must not be intercepted before direct fetch is attempted');
 assert.doesNotMatch(capture, /page-video-downloader-panel button/, 'HLS downloads must try the fast offscreen path before page capture');
 assert.doesNotMatch(capture, /new MutationObserver/, 'capture fallback must not install a page-wide UI observer');
@@ -35,5 +36,6 @@ assert.doesNotMatch(content, /triggerPlayers|\.play\(\)[\s\S]{0,100}Scanning/, '
 assert.doesNotMatch(content, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'media tracking must not observe high-frequency class mutations');
 assert.match(content, /collectDeclarative[\s\S]*og:video[\s\S]*application\/ld\+json/, 'pre-play discovery should inspect bounded declarative media metadata');
 assert.match(youtube, /accessibleFormatUrl/, 'YouTube pre-play probing should accept already-signed cipher URLs without deciphering protected signatures');
+assert.match(youtube, /avd:youtube-refresh/, 'YouTube probe must support an explicit pre-download refresh');
 
 console.log('SPA, performance, HLS-output, DRM-boundary, and YouTube fallback regression tests passed');

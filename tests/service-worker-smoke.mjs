@@ -97,4 +97,12 @@ await new Promise(resolve => setTimeout(resolve, 180));
 assert.equal(sessionData['avd-tab-1']?.context.endsWith('|lesson two'), true, 'current SPA context should persist across MV3 worker suspension');
 assert.equal(sessionData['avd-tab-1']?.items?.length, 0, 'cleared lesson state should persist without stale candidates');
 
+await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [
+  { url: 'https://r1.googlevideo.com/videoplayback?itag=18&expire=1', kind:'video', mime:'video/mp4', seenAt:Date.now() },
+  { url: `https://r1.googlevideo.com/videoplayback?itag=22&expire=${Math.floor(Date.now()/1000)+3600}`, kind:'video', mime:'video/mp4', seenAt:Date.now() }
+] });
+const freshOnly = await message({ type:'GET_MEDIA_CANDIDATES' });
+assert.equal(freshOnly.items.some(item => /itag=18/.test(item.url)), false, 'expired signed streams must be pruned before selection');
+assert.equal(freshOnly.items.some(item => /itag=22/.test(item.url)), true, 'fresh signed streams should remain selectable');
+
 console.log('service-worker smoke tests passed');

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.1 - 2026-08-25
+
+- Removed automatic decoded-page recording as the YouTube HTTP 403 fallback, eliminating full-duration capture timeouts.
+- Refreshes YouTube player-response streams immediately before direct or merged downloads and retries once after an expired/403 response.
+- Prunes cached signed media URLs when their explicit expiry has passed or their observation is older than four hours.
+- Returns a prompt actionable error when YouTube exposes no fresh accessible URL; no player recording is started.
+- Added signed-stream refresh, expiry-pruning, and no-YouTube-capture regression coverage.
+
 ## 2.9.0 - 2026-08-25
 
 - Removed page-wide observation of high-frequency class and character-data mutations that could hang YouTube and complex SPAs.

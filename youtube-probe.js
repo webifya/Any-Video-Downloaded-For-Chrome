@@ -87,4 +87,5 @@
   window.addEventListener('yt-navigate-finish', onNavigate, true);
   window.addEventListener('yt-page-data-updated', onNavigate, true);
   document.addEventListener('loadedmetadata', () => scheduleProbe(0), true);
+  document.addEventListener('avd:youtube-refresh', () => scheduleProbe(0));
 })();

@@ -118,16 +118,31 @@
   async function downloadOption(option){
     state.currentLabel=option.label;setStatus(`${option.label}: preparing…`);
     if(option.mode==='merged'){
-      const r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MERGED_MEDIA',video:option.video,audio:option.audio,filenameBase:pageTitle(),pageUrl:location.href});
+      let video=option.video,audio=option.audio;
+      if(/(?:^|\.)youtube\.com$/i.test(location.hostname)){
+        document.dispatchEvent(new CustomEvent('avd:youtube-refresh'));
+        await sleep(250);await pullNetwork(true);
+        video=state.candidates.get(key(video))||video;audio=state.candidates.get(key(audio))||audio;
+      }
+      let r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MERGED_MEDIA',video,audio,filenameBase:pageTitle(),pageUrl:location.href});
+      if(!r?.ok&&/(?:HTTP\s*403|expired|unavailable|tiny)/i.test(r?.error||'')&&/(?:^|\.)youtube\.com$/i.test(location.hostname)){
+        document.dispatchEvent(new CustomEvent('avd:youtube-refresh'));await sleep(500);await pullNetwork(true);
+        video=state.candidates.get(key(video))||video;audio=state.candidates.get(key(audio))||audio;
+        r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MERGED_MEDIA',video,audio,filenameBase:pageTitle(),pageUrl:location.href});
+      }
       if(!r?.ok)throw new Error(r?.error||'Local merge failed');setStatus(r.message||'Merged download complete.');return;
     }
-    const i=option.item;const r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MEDIA',url:i.url,kind:i.kind,mime:i.mime,filenameBase:pageTitle(),pageUrl:location.href});
+    let i=option.item;
+    if(/(?:^|\.)youtube\.com$/i.test(location.hostname)){
+      document.dispatchEvent(new CustomEvent('avd:youtube-refresh'));await sleep(250);await pullNetwork(true);i=state.candidates.get(key(i))||i;
+    }
+    let r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MEDIA',url:i.url,kind:i.kind,mime:i.mime,filenameBase:pageTitle(),pageUrl:location.href});
+    if(!r?.ok&&/(?:HTTP\s*403|expired|unavailable|tiny)/i.test(r?.error||'')&&/(?:^|\.)youtube\.com$/i.test(location.hostname)){
+      document.dispatchEvent(new CustomEvent('avd:youtube-refresh'));await sleep(500);await pullNetwork(true);i=state.candidates.get(key(i))||i;
+      r=await chrome.runtime.sendMessage({type:'DOWNLOAD_MEDIA',url:i.url,kind:i.kind,mime:i.mime,filenameBase:pageTitle(),pageUrl:location.href});
+    }
     if(!r?.ok){
-      if(/(?:^|\.)youtube\.com$/i.test(location.hostname)&&/googlevideo\.com/i.test(i.url||'')&&/(?:HTTP\s*403|expired|unavailable|tiny)/i.test(r?.error||'')){
-        document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'YouTube video'}}));
-        setStatus('Signed YouTube URL expired; using the already-decoded page video fallback…');
-        return;
-      }
+      if(/(?:^|\.)youtube\.com$/i.test(location.hostname)&&/googlevideo\.com/i.test(i.url||''))throw new Error('YouTube did not expose a fresh downloadable stream URL. Reload the video page and scan again; real-time page recording was not started.');
       if(i.kind==='hls'&&/(?:decode|recorder|capture|convert|transport stream|MediaRecorder)/i.test(r?.error||'')){
         document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'HLS video'}}));
         setStatus('Using the already-decoded page video fallback…');

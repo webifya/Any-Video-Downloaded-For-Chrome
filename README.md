@@ -1,31 +1,31 @@
 # Any Video Downloader
 
-**Any Video Downloader** is a lightweight Chrome Manifest V3 extension for detecting and downloading accessible video/audio media from the current webpage.
+**Any Video Downloader** is a Chrome Manifest V3 extension for detecting and downloading accessible video/audio media from the current webpage.
 
 ![Install guide](docs/install-guide.svg)
 
 ## Current version
 
-**v2.3.1 — Stability + complete-stream preference**
+**v2.4.0 — Local adaptive merge architecture**
 
-This release builds on the v2.3.0 cross-platform audit and fixes one of the biggest remaining adaptive-stream problems: when a platform exposes a complete progressive file containing both video and audio, the extension now prefers that single playable file over separate adaptive tracks.
+v2.4.0 changes the architecture for sites that deliver video and audio as separate adaptive tracks. Instead of forcing the user to keep a silent video file plus a separate audio file, the extension now fetches both accessible tracks and attempts to merge them locally inside Chrome into one playable file.
 
 ## Main features
 
 - Direct MP4, WebM, MOV and M4V detection.
-- Audio stream detection (M4A/AAC/MP3/WebM/Opus where exposed).
+- Audio stream detection where exposed.
 - Unencrypted HLS / M3U8 support.
 - Unencrypted MPEG-DASH / MPD support.
-- HLS master-playlist handling, including separate audio renditions.
+- HLS master-playlist and separate-audio rendition handling.
 - DASH `SegmentTemplate`, `SegmentTimeline`, `SegmentList`, and direct `BaseURL` handling.
-- Network detection for custom/iframe players even when the top page has no normal `<video>` URL.
-- Signed/range-based CDN URL cleanup for YouTube/Googlevideo, Facebook/Instagram CDNs and Vimeo CDNs.
-- Deduplication: shows the best main video plus the best separate audio option instead of dozens of byte-range fragments.
-- Prefers a complete video+audio progressive stream when one is available.
+- Network detection for custom/iframe players.
+- Signed/range-based CDN handling for Googlevideo, Facebook/Instagram CDNs and Vimeo CDNs.
+- Deduplication of repeated byte-range requests.
+- Best available video selection plus local audio/video merge when the site separates tracks.
 - Uses the current page/lesson/video title for filenames.
-- Detects SPA/JavaScript lesson changes and clears stale media from the previous lesson.
-- Live progress for fetched direct media, HLS and DASH downloads.
-- No remote executable code.
+- Detects JavaScript/SPA lesson changes and clears stale media from the previous lesson.
+- Live progress for fetched direct media, HLS, DASH and local merge operations.
+- No remote executable code or remote conversion server.
 
 ## Platform coverage
 
@@ -33,29 +33,38 @@ This release builds on the v2.3.0 cross-platform audit and fixes one of the bigg
 |---|---|
 | Self-hosted HTML5 MP4/WebM | Strong |
 | GoHighLevel courses | Strong for accessible direct/HLS media |
-| WordPress / HTML5 / Video.js / JW Player | Strong when media is direct/HLS/DASH and unencrypted |
-| Wistia / Brightcove / Bunny / Mux / Cloudflare Stream | Best effort; commonly works when accessible HLS/DASH/direct URLs are exposed |
+| WordPress / HTML5 / Video.js / JW Player | Strong when accessible direct/HLS/DASH media is exposed |
+| Wistia / Brightcove / Bunny / Mux / Cloudflare Stream | Best effort for accessible direct/HLS/DASH delivery |
 | Vimeo | Direct/HLS/DASH best effort |
-| YouTube | Prefers progressive video+audio when exposed; otherwise adaptive video/audio best effort |
-| Facebook / Reels | Signed direct/adaptive media best effort |
+| YouTube | Progressive or adaptive video/audio detection; separate accessible tracks can be locally merged |
+| Facebook / Reels | Signed direct/adaptive media best effort with range-request deduplication |
 | Instagram / Reels | Signed direct/adaptive media best effort |
 | X/Twitter / Reddit / Dailymotion / Twitch / TikTok / Loom / Streamable | Best effort through direct/HLS/DASH/network detection |
-| Netflix / Disney+ / Prime Video / Hulu and other DRM services | Not supported |
+| DRM services such as Netflix / Disney+ / Prime Video / Hulu | Not supported |
 
-No extension can guarantee every streaming site because players, signatures and delivery methods change frequently. This project intentionally does **not** bypass DRM, encryption, paywalls, authentication, or access controls.
+Large platforms frequently change player delivery methods and signed URLs, so no browser extension can guarantee every video on every service. This project intentionally does **not** bypass DRM, encryption, paywalls, authentication, or access controls.
 
-## Adaptive-stream behavior
+## Adaptive video + audio merging
 
-When a platform exposes a normal progressive MP4 containing both video and audio, v2.3.1 prefers it automatically. This is especially useful on YouTube when a combined progressive representation is available.
+When a complete progressive file already contains both video and audio, it can be downloaded directly.
 
-When a site only exposes separate adaptive tracks, the extension still saves two valid files rather than falsely renaming or corrupting them:
+When the best available quality is split into separate accessible video and audio tracks, v2.4.0 uses this flow:
 
-```text
-Video Title.mp4
-Video Title - audio.m4a
-```
+1. Fetch the selected video track locally.
+2. Fetch the selected audio track locally.
+3. Convert the fetched data to extension-local Blob URLs so cross-origin media is not captured directly.
+4. Decode the two tracks in an offscreen document.
+5. Synchronize video and audio playback.
+6. Record the combined `MediaStream` with Chrome's local `MediaRecorder` implementation.
+7. Save one merged MP4 when Chrome supports MP4 recording, otherwise save a WebM file.
 
-A browser-side general-purpose muxer is not bundled because that would substantially increase extension size and memory use. The current strategy prioritizes a complete progressive file first, then falls back to separate adaptive tracks only when necessary.
+No external converter or remote executable code is used.
+
+### Merge fallback
+
+Some uncommon codec/container combinations cannot be decoded or recorded by the installed Chrome build. In that case, the extension preserves the successfully downloaded source tracks as separate files rather than discarding them.
+
+The local merge stage runs at approximately media playback speed because it uses Chrome's native decode/capture/record pipeline. This trades speed for a much smaller extension, no FFmpeg/WASM dependency, and Chrome Web Store-friendly local processing.
 
 ## Install on Chrome
 
@@ -65,56 +74,52 @@ A browser-side general-purpose muxer is not bundled because that would substanti
 4. Enable **Developer mode**.
 5. Click **Load unpacked**.
 6. Select the extracted folder containing `manifest.json`.
-7. After every update, click **Reload** for Any Video Downloader and refresh the video page.
+7. After every update, click **Reload** for Any Video Downloader and fully refresh the video page.
 
 ![Usage guide](docs/usage-guide.svg)
 
 ## How to use
 
 1. Open the page containing the video.
-2. If the player lazy-loads media, play it for a few seconds.
+2. If the player lazy-loads its media, play it for a few seconds.
 3. Click the floating **↓** launcher.
 4. Click **Scan** when necessary.
-5. Download the main video, separate audio if needed, or **Download All**.
+5. Use **Download Video** or **Download + Merge** for the main video.
+6. Use **Download Audio** when an audio-only copy is also desired.
 
-For course/SPA pages, switch to another lesson normally. The extension detects the page/lesson change, clears old stream URLs, and rescans the new lesson.
+On course/SPA pages, switch lessons normally. The extension detects the lesson/page change, clears old stream URLs, and scans the newly loaded lesson.
 
-## v2.3.1 fixes
+## v2.4.0 architecture fixes
 
-- YouTube player-response probing now distinguishes progressive formats from adaptive formats.
-- Complete YouTube progressive streams containing audio are preferred over higher-resolution video-only adaptive tracks.
-- Separate audio is hidden when the selected progressive file already contains audio.
-- Service-worker candidate merging now preserves progressive/audio metadata instead of losing it when later network requests arrive.
-- Added automated service-worker smoke tests for complete-stream preference and Meta/Facebook byte-range deduplication.
-- CI now checks JavaScript syntax, manifest JSON, manifest basics, and media-selection smoke tests.
+- Added a new `DOWNLOAD_MERGED_MEDIA` processing path.
+- Preserves `hasAudio`, `hasVideo`, progressive/adaptive, quality and bitrate metadata from player responses.
+- The page UI now presents one primary video action instead of exposing every adaptive network fragment.
+- Separate video/audio tracks are paired automatically.
+- Signed YouTube/Meta/Vimeo range URLs are normalized before local fetch, with original signed URLs retained for fallback.
+- Local blob URLs avoid cross-origin `captureStream()` restrictions during the merge stage.
+- Native `MediaRecorder.isTypeSupported()` chooses MP4 when available and WebM otherwise.
+- Audio/video synchronization is corrected during long merges.
+- HLS and DASH separate-track flows now attempt local merge before falling back to separate files.
+- The offscreen document uses the `BLOBS` reason so long fetch/merge jobs are not tied to Chrome's special audio-playback lifetime rule.
+- Automated smoke tests cover adaptive pair routing, YouTube metadata preservation and Facebook/Meta byte-range deduplication.
 
-## v2.3.0 audit fixes
-
-- Removed the recurring SPA polling loop; navigation detection is event/mutation-driven and debounced.
-- Rebuilt candidate scoring so MP4 and higher-quality representations are preferred where metadata is available.
-- Uses `Content-Range` total size instead of showing misleading tiny byte-range sizes.
-- Preserves useful size/quality metadata when later requests contain empty values.
-- Removes volatile range parameters before fetching signed CDN media and retries the original URL if the cleaned URL is rejected.
-- Added HLS separate-audio playlist support.
-- Added DASH `SegmentList` support and safer representation selection.
-- Prevents stale media from one SPA lesson/video being offered on the next.
-- Limits DOM/performance scanning and media caches to reduce page-load impact.
-
-See [AUDIT.md](AUDIT.md) for the technical audit and known limitations.
+See [AUDIT.md](AUDIT.md) for the technical audit.
 
 ## Permissions
 
 - `downloads` — saves user-requested direct media.
-- `offscreen` — locally fetches/assembles user-requested signed direct media, HLS and DASH.
-- `webRequest` — observes media requests made by webpage players.
-- `<all_urls>` — required because webpage media is often hosted on a different CDN/domain.
+- `offscreen` — locally fetches, assembles and merges user-requested media.
+- `webRequest` — observes media requests generated by webpage players.
+- `<all_urls>` — media commonly comes from a CDN/domain different from the webpage.
 
 ## Chrome Web Store single purpose
 
 > Detect and download accessible video media from the web page the user is currently viewing for authorized offline use.
 
-## Limitations
+## Remaining boundaries
 
-The extension does not bypass DRM, encrypted streams, paywalls, subscription controls, authentication restrictions, or website security controls. Large segmented downloads are assembled locally in browser memory, so extremely large files may be constrained by available memory.
+The extension does not bypass DRM/encrypted streams, paywalls, subscription controls, authentication restrictions, or website security controls. These are intentional boundaries, not bugs to work around.
 
-Use it only for media you own or have permission to save.
+Very large media files still require substantial local memory because fetched/assembled media is processed in the browser. The v2.4 architecture avoids external services and large bundled WASM binaries, but a future disk-backed processing queue could further reduce peak memory use for multi-gigabyte files.
+
+Use the extension only for media you own or have permission to save.

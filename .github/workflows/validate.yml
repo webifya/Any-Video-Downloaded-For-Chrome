@@ -1,0 +1,34 @@
+name: Validate Extension
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check service-worker.js
+          node --check content.js
+          node --check offscreen.js
+          node --check youtube-listener.js
+          node --check youtube-probe.js
+      - name: Validate manifest JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json OK')"
+      - name: Basic manifest assertions
+        run: |
+          node - <<'NODE'
+          const m = require('./manifest.json');
+          if (m.manifest_version !== 3) throw new Error('Manifest must be v3');
+          if (!m.version) throw new Error('Missing version');
+          if (!Array.isArray(m.permissions)) throw new Error('Missing permissions');
+          console.log(`Any Video Downloader ${m.version} validated`);
+          NODE

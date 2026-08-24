@@ -6,7 +6,9 @@
 
 ## Current version
 
-**v2.10.0 — corrected HLS byte-range assembly and warmup routing**
+**v3.0.0 — type-routed download architecture and local MPEG-TS transmuxing**
+
+v3.0.0 selects a processor based on the detected media: direct/ranged files, fMP4/CMAF HLS, MPEG-TS HLS, separate adaptive tracks, DASH, or an exposed page player. MPEG-TS H.264/AAC is now converted structurally to fragmented MP4 with a bundled local transmuxer before Chrome decoding is attempted. This removes the failing assumption that Chrome can load an assembled `.ts` Blob as a normal media element.
 
 v2.10.0 fixes the audited causes of Chrome's “could not decode one of the selected media tracks” error on common course-player HLS playlists. It preserves `EXT-X-BYTERANGE` offsets instead of repeatedly concatenating whole backing files, follows the actual frame discovered during the 3.5-second warmup, and avoids an advertised high-bitrate codec when Chrome reports that codec unsupported.
 
@@ -14,7 +16,7 @@ v2.9.6 also discovers video elements inside open shadow roots and generated play
 
 v2.9.5 no longer assumes the media request's reported frame is where the `<video>` lives. On warm-up or fallback, it enumerates the tab's frames, asks each injected helper whether it has a visible video, ranks matches by visible area, and targets the actual player. This covers players whose HLS request is initiated by the top page while their video element is nested in an iframe.
 
-The panel header displays the running version (for example, `Any Video Downloader v2.10.0`). Unpacked extensions do not update automatically: after replacing/pulling files, click **Reload** on `chrome://extensions` and refresh the target page once.
+The panel header displays the running version (for example, `Any Video Downloader v3.0.0`). Unpacked extensions do not update automatically: after replacing/pulling files, click **Reload** on `chrome://extensions` and refresh the target page once.
 
 This bounded warm-up is download-initiated only. Scan still never starts playback, unrelated videos are untouched, and the old multi-player autoplay behavior remains removed.
 
@@ -48,6 +50,7 @@ Web services that accept a pasted YouTube URL commonly use a remote extraction/c
 - For HLS course players, uses the page's already-decoded video stream to create a normal MP4 when Chrome supports MP4 recording, otherwise WebM.
 - Live download/recording progress.
 - No remote executable code or remote conversion server.
+- Bundled Apache-2.0 `mux.js` 6.3.0 MPEG-TS transmuxer; license is included under `vendor/`.
 
 ## v2.8.0 course / SPA changes
 

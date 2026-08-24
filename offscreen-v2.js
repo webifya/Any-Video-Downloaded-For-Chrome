@@ -284,6 +284,21 @@ const AVD = (() => {
     }
   }
 
+  async function transmuxTransportStream(input) {
+    const Transmuxer=globalThis.muxjs?.mp4?.Transmuxer||globalThis.muxjs?.Transmuxer;
+    if(!Transmuxer)throw new Error('The local MPEG-TS transmuxer is unavailable.');
+    const source=new Uint8Array(await input.arrayBuffer()),outputs=[];
+    const transmuxer=new Transmuxer({remux:true,keepOriginalTimestamps:false});
+    transmuxer.on('data',segment=>outputs.push(segment));
+    transmuxer.push(source);transmuxer.flush();
+    if(!outputs.length)throw new Error('The MPEG-TS stream contained no supported H.264/AAC media.');
+    const parts=[];let outputType='video/mp4';
+    outputs.forEach((segment,index)=>{if(index===0&&segment.initSegment?.byteLength)parts.push(segment.initSegment);if(segment.data?.byteLength)parts.push(segment.data);if(segment.type==='audio')outputType='audio/mp4';});
+    const output=new Blob(parts,{type:outputType});
+    if(output.size<32768)throw new Error('MPEG-TS transmuxing produced an unexpectedly small MP4.');
+    return output;
+  }
+
   async function downloadDirect(msg) {
     report(msg.tabId, 2, 'direct', 0, 0, `Preparing ${msg.kind === 'audio' ? 'audio' : 'video'} download…`);
     const media = await fetchCompleteMedia({ url: msg.url, originalUrl: msg.originalUrl, mime: msg.mime, kind: msg.kind }, msg.tabId, `Downloading ${msg.kind === 'audio' ? 'audio' : 'video'}`, 3, 97);
@@ -397,7 +412,11 @@ const AVD = (() => {
     if (!master.variants.length) {
       const info = parseHlsMedia(text, msg.url);
       const blob = await hlsTrackBlob(info, msg.tabId, 'video', 3, 97);
-      if (/mp2t/.test(blob.type)) return transcodeTransportStream(blob, msg.filenameBase, msg.tabId);
+      if (/mp2t/.test(blob.type)) {
+        report(msg.tabId, 32, 'hls-transmux', 0, blob.size, 'Transmuxing MPEG-TS to MP4 without re-encoding…');
+        try{const mp4=await transmuxTransportStream(blob),filename=`${msg.filenameBase}.mp4`;saveBlob(mp4,filename);report(msg.tabId,100,'done',mp4.size,mp4.size,`Complete — ${filename}`);return{ok:true,message:`Downloaded ${filename}`};}
+        catch(error){return transcodeTransportStream(blob,msg.filenameBase,msg.tabId).catch(()=>{throw error;});}
+      }
       const ext = '.mp4';
       saveBlob(blob, `${msg.filenameBase}${ext}`);
       report(msg.tabId, 100, 'done', blob.size, blob.size, `Complete — ${msg.filenameBase}${ext}`);
@@ -405,12 +424,14 @@ const AVD = (() => {
     }
     const variant = master.variants.find(hlsVariantSupported) || master.variants[0];
     const vInfo = parseHlsMedia(await fetchText(variant.url), variant.url);
-    const video = await hlsTrackBlob(vInfo, msg.tabId, 'video', 3, 18);
+    let video = await hlsTrackBlob(vInfo, msg.tabId, 'video', 3, 18);
     const matching = master.audios.filter(a => !variant.audioGroup || a.groupId === variant.audioGroup);
     const audioDef = matching.find(a => a.isDefault) || matching[0];
     if (audioDef) {
       const aInfo = parseHlsMedia(await fetchText(audioDef.url), audioDef.url);
-      const audio = await hlsTrackBlob(aInfo, msg.tabId, 'audio', 19, 30);
+      let audio = await hlsTrackBlob(aInfo, msg.tabId, 'audio', 19, 30);
+      if(/mp2t/.test(video.type)){report(msg.tabId,22,'hls-transmux',0,video.size,'Transmuxing HLS video track to fMP4…');video=await transmuxTransportStream(video);}
+      if(/aac/.test(audio.type)){report(msg.tabId,27,'hls-transmux',0,audio.size,'Transmuxing HLS audio track to fMP4…');audio=await transmuxTransportStream(audio);}
       try { return await recordCombined(video, audio, msg.filenameBase, msg.tabId, variant.bandwidth); }
       catch (e) {
         if (/mp2t/.test(video.type)) throw new Error(`${e.message} No raw .ts file was saved; use the page-decoded capture fallback.`);
@@ -419,7 +440,11 @@ const AVD = (() => {
         throw new Error(`${e.message} Valid non-TS HLS tracks were saved separately as a fallback.`);
       }
     }
-    if (/mp2t/.test(video.type)) return transcodeTransportStream(video, msg.filenameBase, msg.tabId);
+    if (/mp2t/.test(video.type)) {
+      report(msg.tabId,32,'hls-transmux',0,video.size,'Transmuxing MPEG-TS to MP4 without re-encoding…');
+      try{const mp4=await transmuxTransportStream(video),filename=`${msg.filenameBase}.mp4`;saveBlob(mp4,filename);report(msg.tabId,100,'done',mp4.size,mp4.size,`Complete — ${filename}`);return{ok:true,message:`Downloaded ${filename}`};}
+      catch(error){return transcodeTransportStream(video,msg.filenameBase,msg.tabId).catch(()=>{throw error;});}
+    }
     const ext = '.mp4';
     saveBlob(video, `${msg.filenameBase}${ext}`);
     report(msg.tabId, 100, 'done', video.size, video.size, `Complete — ${msg.filenameBase}${ext}`);
@@ -539,7 +564,7 @@ const AVD = (() => {
     return { ok: true, message: `Downloaded ${filename}` };
   }
 
-  return { downloadDirect, downloadMerged, downloadHls, downloadDash, report, parseHlsMaster, parseHlsMedia, hlsVariantSupported };
+  return { downloadDirect, downloadMerged, downloadHls, downloadDash, report, parseHlsMaster, parseHlsMedia, hlsVariantSupported, transmuxTransportStream };
 })();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

@@ -32,6 +32,7 @@ assert.doesNotMatch(hls, /saveBlob\([^\n]*\.ts/, 'the offscreen engine must neve
 assert.match(hls, /ContentProtection/, 'DASH content protection must remain rejected');
 assert.match(hls, /info\.encrypted/, 'encrypted HLS must remain rejected');
 assert.match(hls, /EXT-X-BYTERANGE[\s\S]*Range:`bytes=\$\{part\.range\.start\}-\$\{part\.range\.end\}`/, 'HLS byte-range playlists must fetch declared ranges instead of duplicating whole backing files');
+assert.match(hls, /transmuxTransportStream[\s\S]*muxjs[\s\S]*hls-transmux/, 'MPEG-TS HLS must use the local transmux architecture before decode-and-record fallback');
 
 assert.match(content, /avd:youtube-refresh[\s\S]*DOWNLOAD_MEDIA[\s\S]*avd:youtube-refresh/, 'YouTube downloads should refresh signed streams and retry once');
 assert.doesNotMatch(content, /YouTube video['"]?\}\}\)\)|detail:\{label:'YouTube video'/, 'YouTube failure must not start the real-time capture fallback');

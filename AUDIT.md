@@ -1,4 +1,4 @@
-# Any Video Downloader v2.10.0 Technical Audit
+# Any Video Downloader v3.0.0 Technical Audit
 
 ## Scope
 
@@ -25,6 +25,21 @@ The audit identified these root causes:
 4. The fallback message still said “visible video” after visibility stopped being an exclusion condition, obscuring whether the real boundary was an inaccessible/sandboxed player or absence of an HTML media element.
 
 The corrected pipeline retains explicit and implicit byte-range offsets, sends exact HTTP `Range` requests (and slices a full `200` response when a CDN ignores Range), follows the frame returned by warm-up, prefers the newest manifest from that frame, and selects the highest Chrome-supported advertised video codec. Page capture remains a last resort rather than the primary HLS engine.
+
+## v3.0.0 type-routed media architecture
+
+The repeated DigitalMarketer failure proved that browser-native decoding could not remain the universal conversion layer. v3.0.0 classifies the selected media and routes it to a dedicated processor:
+
+| Detected media | Processor |
+| --- | --- |
+| Complete MP4/WebM | Validated direct/range-recovery download |
+| HLS fMP4/CMAF | Byte-range-aware fragment assembly |
+| HLS MPEG-TS containing H.264/AAC | Local `mux.js` transport-stream-to-fMP4 transmux, without decoding or re-encoding |
+| Separate MPEG-TS video and ADTS AAC audio | Transmux each source to fMP4, then use the existing local track-combination stage |
+| DASH fMP4/WebM | DASH segment assembly and adaptive-track path |
+| Page with an exposed capturable HTML video | Page-decoded recording only as a final compatibility fallback |
+
+The Apache-2.0 `mux.js` 6.3.0 browser build is vendored in the extension and loaded locally by the offscreen document. It performs no runtime code download. Real upstream H.264/AAC MPEG-TS and standalone ADTS AAC fixtures verify that output contains valid ISO BMFF `ftyp`, `moov`, `moof`, and `mdat` boxes before release.
 
 ## Major fixes
 
@@ -58,7 +73,7 @@ If the browser cannot decode/record a particular codec pair, the successfully fe
 
 ### HLS
 
-The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode them. fMP4 output remains MP4; assembled MPEG-TS is decoded and recorded into a genuine MP4 or WebM container. Raw `.ts` is never saved. If Chrome lacks a compatible decoder/recorder, the extension reports the limitation rather than creating a corrupt or mislabeled file.
+The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode the normalized fMP4 tracks. fMP4 output remains MP4. MPEG-TS H.264/AAC is transmuxed directly into fragmented MP4 before Chrome is asked to decode anything; the older real-time decode/record converter remains a secondary compatibility path. Raw `.ts` is never saved.
 
 Media and initialization byte ranges are preserved, including implicit offsets that continue from the previous range. Master variants advertise codec strings when available; unsupported video codecs are skipped when Chrome exposes a compatible lower-bandwidth alternative.
 
@@ -104,4 +119,4 @@ DRM or access-control bypass is intentionally outside the extension's behavior.
 
 ## Validation
 
-The validation workflow checks every extension/test script, parses and asserts the Manifest V3 wiring/version, and runs service-worker selection/context/deduplication tests, signed partial-range recovery, HLS explicit/implicit byte-range parsing, codec compatibility selection, and regressions for event-driven SPA switching, YouTube probe/fallback behavior, HLS container guarantees, and DRM boundaries.
+The validation workflow checks every extension/test script, parses and asserts the Manifest V3 wiring/version, and runs service-worker selection/context/deduplication tests, signed partial-range recovery, real MPEG-TS and ADTS-to-fMP4 fixture conversion, HLS explicit/implicit byte-range parsing, codec compatibility selection, and regressions for event-driven SPA switching, YouTube probe/fallback behavior, HLS container guarantees, and DRM boundaries.

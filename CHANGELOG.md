@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.0 - 2026-08-25
+
+- Replaced the single universal HLS conversion assumption with type-routed direct, fMP4/CMAF, MPEG-TS, separate-track, DASH, and page-player processors.
+- Bundled Apache-2.0 `mux.js` 6.3.0 locally and wired it before the offscreen processor; no runtime remote code is used.
+- Transmuxes H.264/AAC MPEG-TS directly to fragmented MP4 without re-encoding or relying on Chrome to decode a `.ts` Blob.
+- Transmuxes standalone ADTS AAC renditions to audio fMP4 before the separate-track merge path.
+- Keeps native decode/record conversion as a secondary compatibility fallback and never saves raw `.ts`.
+- Added real upstream MPEG-TS and ADTS fixtures verifying `ftyp`, `moov`, `moof`, and `mdat` MP4 output boxes.
+
 ## 2.10.0 - 2026-08-25
 
 - Completed an end-to-end audit of the reported offscreen-decode plus player-fallback failure.

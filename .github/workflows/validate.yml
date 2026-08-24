@@ -24,10 +24,13 @@ jobs:
           node --check hls-page-capture.js
           node --check service-worker.js
           node --check offscreen-v2.js
+          node --check vendor/mux-mp4.min.js
           node --check youtube-listener.js
           node --check youtube-probe.js
           node --check tests/service-worker-smoke.mjs
           node --check tests/offscreen-v2-smoke.mjs
+          node --check tests/hls-transmux-smoke.mjs
+          node --check tests/hls-pipeline-integration.mjs
           node --check tests/behavior-regressions.mjs
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json OK')"
@@ -37,7 +40,7 @@ jobs:
           const fs = require('fs');
           const m = require('./manifest.json');
           if (m.manifest_version !== 3) throw new Error('Manifest must be v3');
-          if (m.version !== '2.10.0') throw new Error('Unexpected release version');
+          if (m.version !== '3.0.0') throw new Error('Unexpected release version');
           if (!m.permissions.includes('declarativeNetRequestWithHostAccess')) throw new Error('Missing signed-CDN request-context permission');
           if (!m.permissions.includes('storage')) throw new Error('Missing MV3 session-persistence permission');
           if (!m.permissions.includes('webNavigation')) throw new Error('Missing cross-frame discovery permission');
@@ -50,6 +53,8 @@ jobs:
           if (!hlsCapture.includes('isYouTube') || !hlsCapture.includes('captureDecodedPageVideo')) throw new Error('YouTube decoded-page capture fallback is missing');
           const html = fs.readFileSync('offscreen.html','utf8');
           if (!html.includes('offscreen-v2.js')) throw new Error('Offscreen conversion pipeline is incomplete');
+          if (!html.includes('vendor/mux-mp4.min.js')) throw new Error('Local MPEG-TS transmuxer is not wired');
+          if (!fs.existsSync('vendor/mux.js-LICENSE.txt')) throw new Error('Vendored transmuxer license is missing');
           if (!m.content_scripts.some(x => x.world === 'MAIN' && x.js?.includes('spa-navigation-hook.js'))) throw new Error('Main-world SPA navigation hook is not wired');
           for (const f of ['background.js','header-rules.js','title-helper.js','spa-navigation-hook.js','content.js','hls-page-capture.js','offscreen-v2.js']) if (!fs.existsSync(f)) throw new Error(`Missing ${f}`);
           if (fs.existsSync('ts-to-playable.js')) throw new Error('Obsolete TS download interception layer should not remain in package');
@@ -61,5 +66,9 @@ jobs:
         run: node tests/service-worker-smoke.mjs
       - name: Run partial-range recovery smoke test
         run: node tests/offscreen-v2-smoke.mjs
+      - name: Run MPEG-TS to fMP4 fixture test
+        run: node tests/hls-transmux-smoke.mjs
+      - name: Run type-routed HLS pipeline integration test
+        run: node tests/hls-pipeline-integration.mjs
       - name: Run behavior regression tests
         run: node tests/behavior-regressions.mjs

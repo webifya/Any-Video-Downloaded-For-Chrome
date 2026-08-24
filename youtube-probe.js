@@ -8,19 +8,27 @@
       const data = typeof resp === 'string' ? JSON.parse(resp) : resp;
       const streaming = data?.streamingData;
       if (!streaming) return;
-      const formats = [...(streaming.formats || []), ...(streaming.adaptiveFormats || [])];
+
+      const progressive = Array.isArray(streaming.formats) ? streaming.formats : [];
+      const adaptive = Array.isArray(streaming.adaptiveFormats) ? streaming.adaptiveFormats : [];
       const items = [];
-      for (const f of formats) {
+
+      const add = (f, source, isProgressive) => {
         const rawUrl = f?.url || '';
-        if (!rawUrl) continue;
+        if (!rawUrl) return;
         const mime = String(f.mimeType || '').split(';')[0];
         const itag = Number(f.itag || 0);
         const kind = mime.startsWith('audio/') || AUDIO_ITAGS.has(itag) ? 'audio' : mime.startsWith('video/') ? 'video' : '';
-        if (!kind) continue;
+        if (!kind) return;
+
+        const hasAudio = !!(isProgressive && kind === 'video') || !!f.audioQuality || !!f.audioSampleRate || !!f.audioChannels;
         items.push({
           url: rawUrl,
           kind,
           mime,
+          source,
+          progressive: !!isProgressive,
+          hasAudio,
           contentLength: Number(f.contentLength || 0) || 0,
           bitrate: Number(f.bitrate || f.averageBitrate || 0) || 0,
           width: Number(f.width || 0) || 0,
@@ -29,8 +37,14 @@
           qualityLabel: f.qualityLabel || '',
           itag
         });
+      };
+
+      for (const f of progressive) add(f, 'youtube-progressive', true);
+      for (const f of adaptive) add(f, 'youtube-adaptive', false);
+
+      if (items.length) {
+        window.postMessage({ source: 'ANY_VIDEO_DOWNLOADER_YOUTUBE', type: 'STREAMS', items }, '*');
       }
-      if (items.length) window.postMessage({ source: 'ANY_VIDEO_DOWNLOADER_YOUTUBE', type: 'STREAMS', items }, '*');
     } catch (_) {}
   }
 
@@ -43,21 +57,19 @@
     } catch (_) {}
   }
 
-  // Repeat initial probes so the isolated-world bridge has time to attach its message listener.
   probe();
   setTimeout(probe, 300);
   setTimeout(probe, 900);
   setTimeout(probe, 1800);
   setTimeout(probe, 3200);
 
-  let lastHref = location.href;
   const onNavigate = () => {
-    if (location.href !== lastHref) lastHref = location.href;
     setTimeout(probe, 200);
     setTimeout(probe, 700);
     setTimeout(probe, 1500);
     setTimeout(probe, 2800);
   };
+
   window.addEventListener('yt-navigate-finish', onNavigate, true);
   window.addEventListener('yt-page-data-updated', onNavigate, true);
   document.addEventListener('loadedmetadata', probe, true);

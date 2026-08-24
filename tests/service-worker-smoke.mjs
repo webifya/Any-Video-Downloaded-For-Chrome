@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 let runtimeListener;
+let lastRuntimeMessage;
 const noopEvent = { addListener() {} };
 
 const chrome = {
@@ -16,7 +17,7 @@ const chrome = {
     onMessage: { addListener(fn) { runtimeListener = fn; } },
     getURL: p => `chrome-extension://test/${p}`,
     getContexts: async () => [],
-    sendMessage: async () => ({ ok: true })
+    sendMessage: async msg => { lastRuntimeMessage = msg; return { ok: true, merged: true }; }
   },
   offscreen: { createDocument: async () => {} },
   downloads: { download: async () => 1 }
@@ -30,7 +31,7 @@ function message(msg, tabId = 1) {
   return new Promise((resolve, reject) => {
     try {
       const ret = runtimeListener(msg, { tab: { id: tabId, url: 'https://www.youtube.com/watch?v=test' } }, resolve);
-      if (ret !== true && msg.type !== 'DOWNLOAD_MEDIA') {
+      if (ret !== true && ['GET_MEDIA_CANDIDATES','UPSERT_MEDIA_CANDIDATES','CLEAR_MEDIA_CANDIDATES'].includes(msg.type)) {
         // synchronous sendResponse paths resolve immediately
       }
     } catch (e) { reject(e); }
@@ -38,16 +39,30 @@ function message(msg, tabId = 1) {
 }
 
 await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [
-  { url: 'https://r1.googlevideo.com/videoplayback?itag=18', kind: 'video', mime: 'video/mp4', source: 'youtube-progressive', progressive: true, hasAudio: true, height: 360, bitrate: 500000 },
-  { url: 'https://r1.googlevideo.com/videoplayback?itag=137&range=0-999', kind: 'video', mime: 'video/mp4', source: 'youtube-adaptive', height: 1080, bitrate: 3000000 },
-  { url: 'https://r1.googlevideo.com/videoplayback?itag=140&range=0-999', kind: 'audio', mime: 'audio/mp4', source: 'youtube-adaptive', bitrate: 128000 }
+  { url: 'https://r1.googlevideo.com/videoplayback?itag=18', kind: 'video', mime: 'video/mp4', source: 'youtube-progressive', isProgressive: true, hasAudio: true, hasVideo: true, height: 360, bitrate: 500000 },
+  { url: 'https://r1.googlevideo.com/videoplayback?itag=137&range=0-999', kind: 'video', mime: 'video/mp4', source: 'youtube-adaptive', hasAudio: false, hasVideo: true, height: 1080, bitrate: 3000000 },
+  { url: 'https://r1.googlevideo.com/videoplayback?itag=140&range=0-999', kind: 'audio', mime: 'audio/mp4', source: 'youtube-adaptive', hasAudio: true, hasVideo: false, bitrate: 128000 }
 ] });
 
 const yt = await message({ type: 'GET_MEDIA_CANDIDATES' });
 assert.equal(yt.ok, true);
-assert.equal(yt.items.length, 1, 'complete YouTube progressive stream should suppress separate adaptive tracks');
-assert.equal(yt.items[0].source, 'youtube-progressive');
-assert.equal(yt.items[0].hasAudio, true);
+assert.equal(yt.items.length, 3, 'service worker should preserve both progressive and adaptive choices for the page planner');
+const progressive = yt.items.find(x => x.source === 'youtube-progressive');
+assert.equal(progressive.hasAudio, true, 'progressive metadata should preserve embedded audio');
+const adaptiveVideo = yt.items.find(x => x.kind === 'video' && x.source === 'youtube-adaptive');
+assert.equal(adaptiveVideo.height, 1080, 'adaptive quality metadata should be preserved');
+
+lastRuntimeMessage = null;
+const merged = await message({
+  type: 'DOWNLOAD_MERGED_MEDIA',
+  filenameBase: 'Test Video',
+  video: adaptiveVideo,
+  audio: yt.items.find(x => x.kind === 'audio')
+});
+assert.equal(merged.ok, true, 'merged-media request should resolve through the offscreen engine');
+assert.equal(lastRuntimeMessage?.type, 'DOWNLOAD_MERGED_MEDIA');
+assert.equal(lastRuntimeMessage?.target, 'offscreen');
+assert.ok(!/[?&]range=/.test(lastRuntimeMessage.video.url), 'volatile YouTube range parameter should be stripped before local fetch');
 
 await message({ type: 'CLEAR_MEDIA_CANDIDATES' });
 await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [

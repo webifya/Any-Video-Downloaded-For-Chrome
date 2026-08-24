@@ -143,7 +143,7 @@ async function ensureOffscreen() {
   if (!creatingOffscreen) {
     creatingOffscreen = chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
-      reasons: ['BLOBS', 'AUDIO_PLAYBACK'],
+      reasons: ['BLOBS'],
       justification: 'Download, assemble, and locally merge user-requested accessible media without remote executable code.'
     }).finally(() => { creatingOffscreen = null; });
   }

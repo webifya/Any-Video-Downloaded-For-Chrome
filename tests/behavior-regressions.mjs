@@ -36,8 +36,10 @@ assert.doesNotMatch(capture, /page-video-downloader-panel button/, 'HLS download
 assert.doesNotMatch(capture, /new MutationObserver/, 'capture fallback must not install a page-wide UI observer');
 assert.match(content, /i\.kind==='hls'[\s\S]*avd:capture-request/, 'failed HLS conversion should retain decoded-page capture as fallback');
 assert.match(content, /CAPTURE_FRAME_VIDEO[\s\S]*frameId/, 'embedded HLS fallback must target the candidate frame');
+assert.match(content, /i\.kind==='hls'[\s\S]*WARMUP_FRAME_VIDEO[\s\S]*3500[\s\S]*pullNetwork/, 'HLS download clicks should warm only the detected player and rescan');
 assert.doesNotMatch(capture, /window\.top\s*!==\s*window\.self\)\s*return/, 'capture helper must remain available inside player frames');
 assert.match(capture, /START_FRAME_VIDEO_CAPTURE[\s\S]*filenameBase/, 'player frames must accept titled capture requests');
+assert.match(capture, /START_FRAME_VIDEO_WARMUP[\s\S]*video\.muted=true[\s\S]*video\.play\(\)[\s\S]*if\(wasPaused\)video\.pause/, 'frame warm-up must be muted, bounded, and restore paused state');
 assert.doesNotMatch(content, /triggerPlayers|\.play\(\)[\s\S]{0,100}Scanning/, 'media scanning must never start page playback');
 assert.doesNotMatch(content, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'media tracking must not observe high-frequency class mutations');
 assert.match(content, /collectDeclarative[\s\S]*og:video[\s\S]*application\/ld\+json/, 'pre-play discovery should inspect bounded declarative media metadata');

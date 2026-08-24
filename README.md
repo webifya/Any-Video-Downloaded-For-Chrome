@@ -6,9 +6,11 @@
 
 ## Current version
 
-**v2.9.3 — embedded-player HLS fallback**
+**v2.9.4 — user-clicked HLS player warm-up**
 
-v2.9.3 fixes HLS fallback for course players hosted in cross-origin iframes. The candidate retains its originating frame ID; if offscreen conversion is unavailable, capture starts in that embedded frame instead of incorrectly searching the top page. Progress returns to the top downloader panel and the current lesson title is preserved.
+v2.9.4 handles lazy course players that expose their usable HLS manifest only after playback begins. On an explicit HLS Download click, the extension starts only the detected player frame, muted, for 3.5 seconds, restores its prior paused/audio state, rescans for the newly exposed manifest, and continues through the normal download pipeline.
+
+This bounded warm-up is download-initiated only. Scan still never starts playback, unrelated videos are untouched, and the old multi-player autoplay behavior remains removed.
 
 Web services that accept a pasted YouTube URL commonly use a remote extraction/conversion workflow. This extension remains local-only and does not send viewing URLs to an undisclosed third-party conversion server.
 

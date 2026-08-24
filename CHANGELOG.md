@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.4 - 2026-08-25
+
+- Added a download-click-only HLS warm-up for lazy players: play the detected frame muted for 3.5 seconds, then rescan and download the refreshed manifest.
+- Targets only the frame associated with the selected HLS candidate; unrelated page videos are never started.
+- Restores mute, volume, and paused state after warm-up.
+- Keeps ordinary Scan non-playing and retains embedded-frame capture only as a final compatibility fallback.
+- Added service-worker frame routing and bounded player-state restoration tests.
+
 ## 2.9.3 - 2026-08-25
 
 - Fixed `Video capture failed: No active page video element was found` when an HLS player lives in a cross-origin iframe.

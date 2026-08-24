@@ -133,6 +133,14 @@
       if(!r?.ok)throw new Error(r?.error||'Local merge failed');setStatus(r.message||'Merged download complete.');return;
     }
     let i=option.item;
+    if(i.kind==='hls'){
+      setStatus(`Starting ${pageTitle()} briefly to load its stream…`);
+      try{await chrome.runtime.sendMessage({type:'WARMUP_FRAME_VIDEO',frameId:Number(i.frameId)||0,durationMs:3500});}catch(_){}
+      await pullNetwork(true,true);
+      const refreshed=[...state.candidates.values()].filter(x=>x.kind==='hls'&&((Number(i.frameId)||0)===(Number(x.frameId)||0))).sort((a,b)=>(b.seenAt||0)-(a.seenAt||0))[0];
+      if(refreshed)i=refreshed;
+      setStatus(`${pageTitle()}: stream loaded, preparing download…`);
+    }
     if(/(?:^|\.)youtube\.com$/i.test(location.hostname)){
       document.dispatchEvent(new CustomEvent('avd:youtube-refresh'));await sleep(250);await pullNetwork(true);i=state.candidates.get(key(i))||i;
     }

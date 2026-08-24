@@ -190,6 +190,9 @@
   });
 
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
+    if(msg?.type==='START_FRAME_VIDEO_WARMUP'){
+      (async()=>{const video=player();if(!video)throw new Error('No video element was found in the detected player frame.');const wasPaused=video.paused,wasMuted=video.muted,oldVolume=video.volume;try{video.muted=true;video.volume=0;status('Loading the embedded video stream…',1);await video.play();await new Promise(resolve=>setTimeout(resolve,Math.max(2000,Math.min(5000,Number(msg.durationMs)||3500))));return{ok:true};}finally{try{if(wasPaused)video.pause();video.muted=wasMuted;video.volume=oldVolume;}catch(_){}}})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message||String(error)}));return true;
+    }
     if(msg?.type!=='START_FRAME_VIDEO_CAPTURE')return;
     const video=player();if(!video){sendResponse({ok:false,error:'No active video element was found in the detected player frame.'});return;}
     const capture=video.captureStream?.bind(video)||video.webkitCaptureStream?.bind(video);if(!capture){sendResponse({ok:false,error:'The embedded player does not expose captureStream.'});return;}

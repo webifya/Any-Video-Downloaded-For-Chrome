@@ -1,4 +1,4 @@
-# Any Video Downloader v2.9.3 Technical Audit
+# Any Video Downloader v2.9.4 Technical Audit
 
 ## Scope
 
@@ -50,6 +50,8 @@ The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate acc
 Fast offscreen HLS processing is attempted before page-decoded recording. The latter remains a compatibility fallback and no longer interrupts normal page playback for streams that can be assembled directly.
 
 When an HLS request originates in an embedded player, its Chrome frame ID is retained through detection and session persistence. If decoded capture is required, the service worker targets that frame, returns progress to the top panel, and supplies the top lesson title. The fallback no longer searches only the top document for a video element.
+
+On an explicit HLS Download action, a lazy player may be warmed for 3.5 seconds before the fetch. The warm-up is muted, bounded to one identified frame, restores the previous paused/audio state, and is followed by a network/declarative rescan. General Scan remains non-playing.
 
 ### DASH
 

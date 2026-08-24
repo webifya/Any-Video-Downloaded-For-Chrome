@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 let runtimeListener;
 let lastRuntimeMessage;
+let lastTabMessage;
 const sessionData = {};
 const noopEvent = { addListener() {} };
 
@@ -12,7 +13,7 @@ const chrome = {
   tabs: {
     onRemoved: noopEvent,
     onUpdated: noopEvent,
-    sendMessage: async () => {}
+    sendMessage: async (...args) => { lastTabMessage=args; return { ok:true }; }
   },
   runtime: {
     onMessage: { addListener(fn) { runtimeListener = fn; } },
@@ -78,6 +79,11 @@ await message({ type: 'UPSERT_MEDIA_CANDIDATES', items: [
 const meta = await message({ type: 'GET_MEDIA_CANDIDATES' });
 assert.equal(meta.items.length, 1, 'Meta byte-range variants should deduplicate to one media candidate');
 assert.equal(meta.items[0].frameId, 7, 'embedded-player frame identity should survive candidate merging');
+lastTabMessage=null;
+const warmed=await message({type:'WARMUP_FRAME_VIDEO',frameId:7,durationMs:3500});
+assert.equal(warmed.ok,true,'embedded player warm-up should be routed');
+assert.equal(lastTabMessage?.[1]?.type,'START_FRAME_VIDEO_WARMUP');
+assert.equal(lastTabMessage?.[2]?.frameId,7,'warm-up should target the detected player frame');
 
 await message({ type: 'CLEAR_MEDIA_CANDIDATES' });
 await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson One', url: 'https://course.test/lesson' });

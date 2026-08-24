@@ -282,6 +282,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'CAPTURE_FRAME_VIDEO') {
     (async()=>{const tabId=sender.tab?.id,frameId=Number(msg.frameId);if(!Number.isInteger(tabId)||!Number.isInteger(frameId)||frameId<=0)throw new Error('Embedded player frame was not identified.');const response=await chrome.tabs.sendMessage(tabId,{type:'START_FRAME_VIDEO_CAPTURE',label:msg.label||'HLS video',filenameBase:safeBase(msg.filenameBase)},{frameId});sendResponse(response||{ok:false,error:'Embedded player did not respond.'});})().catch(error=>sendResponse({ok:false,error:error.message||String(error)}));return true;
   }
+  if (msg?.type === 'WARMUP_FRAME_VIDEO') {
+    (async()=>{const tabId=sender.tab?.id,frameId=Math.max(0,Number(msg.frameId)||0);if(!Number.isInteger(tabId))throw new Error('Page tab was not identified.');const response=await chrome.tabs.sendMessage(tabId,{type:'START_FRAME_VIDEO_WARMUP',durationMs:Math.max(2000,Math.min(5000,Number(msg.durationMs)||3500))},{frameId});sendResponse(response||{ok:false,error:'Player frame did not respond.'});})().catch(error=>sendResponse({ok:false,error:error.message||String(error)}));return true;
+  }
   if (msg?.type === 'DOWNLOAD_MEDIA') {
     (async () => {
       const filenameBase = safeBase(msg.filenameBase);

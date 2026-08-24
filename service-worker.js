@@ -7,7 +7,6 @@ const AUDIO_EXT_RE = /\.(?:m4a|aac|mp3|opus|ogg)(?:$|[?#])/i;
 const HLS_RE = /\.m3u8(?:$|[?#])/i;
 const DASH_RE = /\.mpd(?:$|[?#])/i;
 const REQUEST_FILTER = { urls: ['<all_urls>'], types: ['media', 'xmlhttprequest', 'other'] };
-
 const YT_AUDIO_ITAGS = new Set([139,140,141,171,172,249,250,251,256,258,325,328,599,600]);
 
 function decodedUrl(url = '') { try { return decodeURIComponent(url); } catch (_) { return url; } }
@@ -60,13 +59,9 @@ function stripVolatileRangeParams(url = '') {
   try {
     const u = new URL(url);
     const h = u.hostname.toLowerCase();
-    if (isGoogleVideo(h)) {
-      for (const k of ['range','rn','rbuf']) u.searchParams.delete(k);
-    } else if (isMetaCdn(h)) {
-      for (const k of ['bytestart','byteend','range','start','end']) u.searchParams.delete(k);
-    } else if (isVimeoCdn(h)) {
-      for (const k of ['range','rn','rbuf']) u.searchParams.delete(k);
-    }
+    if (isGoogleVideo(h)) for (const k of ['range','rn','rbuf']) u.searchParams.delete(k);
+    else if (isMetaCdn(h)) for (const k of ['bytestart','byteend','range','start','end']) u.searchParams.delete(k);
+    else if (isVimeoCdn(h)) for (const k of ['range','rn','rbuf']) u.searchParams.delete(k);
     return u.href;
   } catch (_) { return url; }
 }
@@ -104,25 +99,14 @@ function upsert(tabId, incoming) {
     height: Number(item.height || 0) || Number(previous.height || 0),
     bitrate: Number(item.bitrate || 0) || Number(previous.bitrate || 0),
     qualityLabel: item.qualityLabel || previous.qualityLabel || '',
-    progressive: Boolean(item.progressive || previous.progressive),
-    hasAudio: Boolean(item.hasAudio || previous.hasAudio),
-    source: item.source || previous.source || '',
+    hasAudio: item.hasAudio !== undefined ? !!item.hasAudio : previous.hasAudio,
+    hasVideo: item.hasVideo !== undefined ? !!item.hasVideo : previous.hasVideo,
+    isProgressive: item.isProgressive !== undefined ? !!item.isProgressive : previous.isProgressive,
     seenAt: Date.now()
   };
   if (idx >= 0) arr.splice(idx, 1);
   arr.unshift(merged);
   mediaByTab.set(tabId, arr.slice(0, 180));
-}
-
-function itemsForTab(tabId) {
-  const items = mediaByTab.get(tabId) || [];
-  // If YouTube exposes a complete progressive stream (video+audio together), prefer it and
-  // suppress separate adaptive tracks. This gives the user one playable file whenever possible.
-  const completeYoutube = items
-    .filter(x => x.kind === 'video' && x.source === 'youtube-progressive' && x.hasAudio)
-    .sort((a,b) => (b.height - a.height) || (b.bitrate - a.bitrate) || ((b.contentLength || 0) - (a.contentLength || 0)));
-  if (completeYoutube.length) return [completeYoutube[0]];
-  return items;
 }
 
 chrome.webRequest.onBeforeRequest.addListener(details => {
@@ -159,8 +143,8 @@ async function ensureOffscreen() {
   if (!creatingOffscreen) {
     creatingOffscreen = chrome.offscreen.createDocument({
       url: OFFSCREEN_URL,
-      reasons: ['BLOBS'],
-      justification: 'Download and assemble user-requested accessible media locally, including signed direct media, HLS, and DASH streams.'
+      reasons: ['BLOBS', 'AUDIO_PLAYBACK'],
+      justification: 'Download, assemble, and locally merge user-requested accessible media without remote executable code.'
     }).finally(() => { creatingOffscreen = null; });
   }
   await creatingOffscreen;
@@ -176,19 +160,27 @@ function needsFetchedDownload(url='') {
   const h=hostname(url);
   return isGoogleVideo(h) || isMetaCdn(h) || isVimeoCdn(h);
 }
+function serializeMedia(item = {}) {
+  return {
+    url: stripVolatileRangeParams(item.url || ''),
+    originalUrl: item.url || '',
+    kind: item.kind || mediaKind(item.url, item.mime),
+    mime: item.mime || '',
+    bitrate: Number(item.bitrate || 0),
+    width: Number(item.width || 0),
+    height: Number(item.height || 0),
+    qualityLabel: item.qualityLabel || ''
+  };
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'GET_MEDIA_CANDIDATES') {
-    const tabId = sender.tab?.id;
-    sendResponse({ ok: true, items: Number.isInteger(tabId) ? itemsForTab(tabId) : [] });
-    return;
+    const tabId = sender.tab?.id; sendResponse({ ok: true, items: Number.isInteger(tabId) ? (mediaByTab.get(tabId) || []) : [] }); return;
   }
   if (msg?.type === 'UPSERT_MEDIA_CANDIDATES') {
     const tabId = sender.tab?.id;
-    if (Number.isInteger(tabId)) {
-      for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source: item.source || 'player-response' });
-      sendResponse({ ok: true });
-    } else sendResponse({ ok: false });
+    if (Number.isInteger(tabId)) { for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source: item.source || 'player-response' }); sendResponse({ ok: true }); }
+    else sendResponse({ ok: false });
     return;
   }
   if (msg?.type === 'CLEAR_MEDIA_CANDIDATES') {
@@ -206,20 +198,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (kind === 'hls' || kind === 'dash' || needsFetchedDownload(msg.url)) {
         await ensureOffscreen();
         const type = kind === 'dash' ? 'DOWNLOAD_DASH' : kind === 'hls' ? 'DOWNLOAD_HLS' : 'DOWNLOAD_DIRECT';
-        const response = await chrome.runtime.sendMessage({
-          target:'offscreen', type, url: stripVolatileRangeParams(msg.url), originalUrl: msg.url,
-          filenameBase, tabId, mime:msg.mime || '', kind, pageUrl: msg.pageUrl || sender.tab?.url || ''
-        });
+        const response = await chrome.runtime.sendMessage({ target:'offscreen', type, url: stripVolatileRangeParams(msg.url), originalUrl: msg.url, filenameBase, tabId, mime:msg.mime || '', kind, pageUrl: msg.pageUrl || sender.tab?.url || '' });
         sendResponse(response || { ok:false, error:'No response from media downloader.' });
         return;
       }
-      const id = await chrome.downloads.download({
-        url: msg.url,
-        filename: `${filenameBase}${kind === 'audio' ? ' - audio' : ''}${extensionFor(msg.url, msg.mime, kind)}`,
-        saveAs: false,
-        conflictAction: 'uniquify'
-      });
+      const id = await chrome.downloads.download({ url: msg.url, filename: `${filenameBase}${kind === 'audio' ? ' - audio' : ''}${extensionFor(msg.url, msg.mime, kind)}`, saveAs: false, conflictAction: 'uniquify' });
       sendResponse({ ok:true, message:`Download started (#${id}).` });
+    })().catch(error => sendResponse({ ok:false, error:error.message || String(error) }));
+    return true;
+  }
+  if (msg?.type === 'DOWNLOAD_MERGED_MEDIA') {
+    (async () => {
+      const tabId = sender.tab?.id;
+      if (!msg.video?.url || !msg.audio?.url) throw new Error('Both video and audio streams are required for merging.');
+      await ensureOffscreen();
+      const response = await chrome.runtime.sendMessage({
+        target: 'offscreen', type: 'DOWNLOAD_MERGED_MEDIA',
+        video: serializeMedia(msg.video), audio: serializeMedia(msg.audio),
+        filenameBase: safeBase(msg.filenameBase), tabId,
+        pageUrl: msg.pageUrl || sender.tab?.url || ''
+      });
+      sendResponse(response || { ok:false, error:'No response from local merger.' });
     })().catch(error => sendResponse({ ok:false, error:error.message || String(error) }));
     return true;
   }

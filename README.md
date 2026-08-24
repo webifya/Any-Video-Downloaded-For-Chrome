@@ -6,11 +6,9 @@
 
 ## Current version
 
-**v2.4.1 — Adaptive merge stabilization**
+**v2.5.0 — Resilient media architecture**
 
-v2.4.x changes the architecture for sites that deliver video and audio as separate adaptive tracks. The extension now fetches both accessible tracks and attempts to merge them locally inside Chrome into one playable file instead of leaving the user with a silent video plus a separate audio file.
-
-v2.4.1 also removes the obsolete GHL sandbox processor, validates the new processor files in CI, and prevents MPEG-TS HLS bytes from being falsely named as MP4.
+v2.5.0 replaces the previous offscreen processor with a new media engine focused on the remaining real-world failure cases: signed CDN byte ranges, partial downloads, adaptive video/audio tracks, HLS/DASH variants, JavaScript course navigation, and large media assembly.
 
 ## Main features
 
@@ -19,14 +17,15 @@ v2.4.1 also removes the obsolete GHL sandbox processor, validates the new proces
 - Unencrypted HLS / M3U8 support.
 - Unencrypted MPEG-DASH / MPD support.
 - HLS master-playlist and separate-audio rendition handling.
-- DASH `SegmentTemplate`, `SegmentTimeline`, `SegmentList`, and direct `BaseURL` handling.
+- DASH `SegmentTemplate`, `SegmentTimeline`, `SegmentList`, `SegmentBase`, direct `BaseURL`, and inherited `BaseURL` handling.
 - Network detection for custom/iframe players.
 - Signed/range-based CDN handling for Googlevideo, Facebook/Instagram CDNs and Vimeo CDNs.
+- Full-file recovery when a CDN exposes only a partial `206 Partial Content` request.
 - Deduplication of repeated byte-range requests.
 - Best available video selection plus local audio/video merge when the site separates tracks.
 - Uses the current page/lesson/video title for filenames.
 - Detects JavaScript/SPA lesson changes and clears stale media from the previous lesson.
-- Live progress for fetched direct media, HLS, DASH and local merge operations.
+- Live progress for direct media, byte-range recovery, HLS, DASH and local merge operations.
 - No remote executable code or remote conversion server.
 
 ## Platform coverage
@@ -39,39 +38,67 @@ v2.4.1 also removes the obsolete GHL sandbox processor, validates the new proces
 | Wistia / Brightcove / Bunny / Mux / Cloudflare Stream | Best effort for accessible direct/HLS/DASH delivery |
 | Vimeo | Direct/HLS/DASH best effort |
 | YouTube | Progressive or adaptive video/audio detection; separate accessible tracks can be locally merged |
-| Facebook / Reels | Signed direct/adaptive media best effort with range-request deduplication |
+| Facebook / Reels | Signed direct/adaptive media best effort with byte-range recovery and deduplication |
 | Instagram / Reels | Signed direct/adaptive media best effort |
 | X/Twitter / Reddit / Dailymotion / Twitch / TikTok / Loom / Streamable | Best effort through direct/HLS/DASH/network detection |
 | DRM services such as Netflix / Disney+ / Prime Video / Hulu | Not supported |
 
 Large platforms frequently change player delivery methods and signed URLs, so no browser extension can guarantee every video on every service. This project intentionally does **not** bypass DRM, encryption, paywalls, authentication, or access controls.
 
+## Signed CDN / partial-download recovery
+
+A major issue on YouTube, Facebook, Instagram and some Vimeo/CDN configurations is that the browser may expose only a byte-range URL instead of the complete file. Older versions could detect the correct stream but still save only a partial file or get a Chrome “file wasn't available on site” error.
+
+v2.5.0 now:
+
+1. Removes volatile range parameters from the detected URL while preserving the signed URL as fallback.
+2. Fetches the media inside the extension rather than handing fragile CDN URLs directly to Chrome Downloads.
+3. Detects `206 Partial Content` and parses `Content-Range`.
+4. If the response is incomplete, rebuilds the complete media using controlled byte-range requests.
+5. Rejects tiny/expired/non-media responses instead of saving them as fake videos.
+
+This is especially important for `googlevideo.com`, `fbcdn.net`, `cdninstagram.com`, Vimeo CDN and similar signed delivery systems.
+
 ## Adaptive video + audio merging
 
 When a complete progressive file already contains both video and audio, it can be downloaded directly.
 
-When the best available quality is split into separate accessible video and audio tracks, v2.4.1 uses this flow:
+When the best available quality is split into separate accessible video and audio tracks, v2.5.0 uses this flow:
 
-1. Fetch the selected video track locally.
-2. Fetch the selected audio track locally.
-3. Convert both to extension-local Blob URLs.
-4. Decode them in the offscreen media processor.
-5. Synchronize the video and audio tracks.
-6. Combine them into one local `MediaStream`.
-7. Record one output file with Chrome's native `MediaRecorder`.
-8. Save MP4 when the installed Chrome build supports MP4 recording, otherwise save WebM.
+1. Fetch and validate the complete video track.
+2. Fetch and validate the complete audio track.
+3. Recover missing byte ranges when the CDN returned only partial content.
+4. Convert the fetched tracks to extension-local Blob URLs.
+5. Decode them in the offscreen media processor.
+6. Synchronize video and audio.
+7. Record one combined local output with Chrome's native `MediaRecorder`.
+8. Save MP4 when supported by the installed Chrome build, otherwise WebM.
 
-No external converter or remote executable code is used.
+If the installed Chrome build cannot decode or record a particular codec pair, the valid source tracks are saved separately rather than producing a corrupt file.
 
-### Merge fallback
+The native merge phase still runs approximately at media playback speed. That is an intentional tradeoff that avoids remote conversion services and large remote/WASM executables while remaining compatible with Chrome Web Store remote-code rules.
 
-Some uncommon codec/container combinations cannot be decoded or recorded by the installed Chrome build. In that case, the extension preserves the successfully fetched source tracks as separate files rather than creating a corrupt output.
+## HLS safety
 
-The local merge phase runs at approximately media playback speed because it uses Chrome's native decode/capture/record pipeline. This keeps the extension relatively small and avoids an external conversion service or a large FFmpeg/WASM runtime.
+HLS sources can use fragmented MP4 or MPEG-TS. v2.5.0 preserves the real container type instead of simply renaming MPEG-TS bytes to `.mp4`. Separate HLS audio renditions are paired and locally merged when Chrome can decode the source pair.
 
-## HLS container safety
+## DASH improvements
 
-Some HLS playlists use fragmented MP4 while others use MPEG-TS. v2.4.1 no longer labels raw MPEG-TS bytes as `.mp4`. If a source cannot be locally merged/transcoded and is actually MPEG-TS, the fallback is saved with the correct `.ts` container extension.
+The v2.5 processor handles:
+
+- `SegmentTemplate`
+- `SegmentTimeline`, including bounded negative repeats
+- `SegmentList`
+- `SegmentBase`
+- direct and inherited `BaseURL`
+
+When DASH exposes separate video and audio representations, the best accessible video and audio tracks are paired and merged locally when possible.
+
+## Performance / memory architecture
+
+The page-side extension remains event-driven and does not continuously deep-scan the page. The new media processor also avoids repeatedly concatenating giant typed arrays. HLS, DASH and recovered range chunks are assembled as Blob parts, which reduces unnecessary duplicate memory copies during large downloads.
+
+Extremely large multi-gigabyte media can still be constrained by browser/device resources. The extension intentionally does not attempt to defeat browser storage or memory limits.
 
 ## Install on Chrome
 
@@ -94,23 +121,22 @@ Some HLS playlists use fragmented MP4 while others use MPEG-TS. v2.4.1 no longer
 5. Use **Download Video** or **Download + Merge** for the primary video.
 6. Use **Download Audio** only when an audio-only copy is also desired.
 
-On course/SPA pages, switch lessons normally. The extension detects the lesson/page change, clears stale stream URLs, and scans the newly loaded lesson.
+On course/SPA pages such as GHL or JavaScript course platforms, switch lessons normally. The extension detects the lesson/page change, clears stale stream URLs, and scans the newly loaded lesson.
 
-## v2.4.1 fixes
+## v2.5.0 fixes
 
-- Stabilized the v2.4 local adaptive audio/video merge path.
-- Preserves `hasAudio`, `hasVideo`, progressive/adaptive, quality and bitrate metadata from player responses.
-- Presents one primary video action instead of every adaptive network fragment.
-- Pairs separate video/audio tracks automatically.
-- Normalizes signed YouTube/Meta/Vimeo range URLs while retaining the original signed URL for fallback.
-- Uses extension-local Blob URLs for the local merge stage.
-- Chooses MP4 recording when supported by Chrome and WebM otherwise.
-- HLS and DASH separate-track flows attempt local merge before falling back to separate source files.
-- Removed the obsolete GHL `sandbox.html` processor reference from the offscreen document.
-- Added a format guard so MPEG-TS data is not mislabeled as MP4.
-- CI now validates the format guard, offscreen references, JavaScript syntax, manifest structure, adaptive-pair routing and Meta byte-range deduplication.
+- Replaced the old offscreen processor with `offscreen-v2.js`.
+- Added full signed-CDN byte-range recovery for partial `206` media responses.
+- Prevents partial YouTube/Meta/Vimeo files from being mistaken for complete downloads.
+- Uses Blob-part assembly to avoid unnecessary large typed-array copies.
+- Preserves correct HLS MPEG-TS vs fragmented-MP4 container naming.
+- Expanded DASH parsing to `SegmentBase` and inherited `BaseURL` structures.
+- Improved negative DASH timeline-repeat handling.
+- Keeps local adaptive video+audio merging and separate-track fallback.
+- Keeps current lesson/page title filenames and SPA stale-stream clearing.
+- CI now validates the v2.5 processor JavaScript and manifest wiring.
 
-See [AUDIT.md](AUDIT.md) for the technical audit.
+See [AUDIT.md](AUDIT.md) for technical details.
 
 ## Permissions
 
@@ -123,10 +149,8 @@ See [AUDIT.md](AUDIT.md) for the technical audit.
 
 > Detect and download accessible video media from the web page the user is currently viewing for authorized offline use.
 
-## Remaining boundaries
+## Intentional boundaries
 
-The extension does not bypass DRM/encrypted streams, paywalls, subscription controls, authentication restrictions, or website security controls. These are intentional boundaries.
-
-Very large media files still require substantial local memory because fetched/assembled media is processed in the browser. A future disk-backed processing queue could reduce peak memory use for multi-gigabyte media.
+The extension does not bypass DRM/encrypted streams, paywalls, subscription controls, authentication restrictions, or website security controls.
 
 Use the extension only for media you own or have permission to save.

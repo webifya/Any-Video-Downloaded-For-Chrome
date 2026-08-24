@@ -104,3 +104,4 @@ const result = await new Promise((resolve, reject) => {
 assert.equal(result.ok, true, result.error || 'range recovery should succeed');
 assert.equal(savedName, 'Range Test.mp4', 'recovered media should save with the expected filename');
 console.log('offscreen v2.5 partial-range recovery smoke test passed');
+process.exit(0);

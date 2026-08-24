@@ -3,6 +3,7 @@
 
   let busy = false;
   const clean = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 170) || 'Video';
+  const isYouTube = /(^|\.)youtube\.com$/i.test(location.hostname);
 
   function visible(el) {
     if (!el?.isConnected) return false;
@@ -21,6 +22,12 @@
   }
 
   function title() {
+    if (isYouTube) {
+      const yt = [...document.querySelectorAll('ytd-watch-metadata h1 yt-formatted-string, #title h1 yt-formatted-string, h1.ytd-watch-metadata')]
+        .find(visible);
+      const ytTitle = clean(yt?.textContent || document.querySelector('meta[property="og:title"]')?.content || document.title.replace(/\s*-\s*YouTube\s*$/i, ''));
+      if (ytTitle && ytTitle !== 'Video') return ytTitle;
+    }
     const marker = document.getElementById('avd-current-media-title');
     const marked = clean(marker?.textContent || '');
     if (marked && marked !== 'Video') return marked;
@@ -83,13 +90,13 @@
     setTimeout(() => URL.revokeObjectURL(u), 180000);
   }
 
-  async function captureHls() {
+  async function captureDecodedPageVideo(label = 'video') {
     if (busy) throw new Error('A page capture is already running.');
     const video = player();
     if (!video) throw new Error('No active page video element was found.');
     const capture = video.captureStream?.bind(video) || video.webkitCaptureStream?.bind(video);
     if (!capture) throw new Error('This Chrome build cannot capture the decoded page video.');
-    if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration === Infinity) throw new Error('Video duration is not ready. Play the lesson briefly, then try again.');
+    if (!Number.isFinite(video.duration) || video.duration <= 0 || video.duration === Infinity) throw new Error('Video duration is not ready. Play the video briefly, then try again.');
 
     const original = {
       time: video.currentTime || 0,
@@ -103,27 +110,26 @@
     busy = true;
     let recorder, progressTimer;
     try {
-      status('Preparing decoded HLS video…', 1);
+      status(`Preparing decoded ${label}…`, 1);
       video.loop = false;
       video.playbackRate = 1;
       await seek(video, 0);
 
-      // Start playback first so captureStream exposes the tracks on lazy-loaded players.
+      // Start playback first so captureStream exposes tracks on lazy/adaptive players.
       const oldMuted = video.muted;
       video.muted = true;
       await video.play();
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 250));
       const stream = capture();
       const vTracks = stream.getVideoTracks();
       const aTracks = stream.getAudioTracks();
-      if (!vTracks.length) throw new Error('The HLS player did not expose a capturable video track.');
-      // Muting the element should not remove captureStream audio; restore the source mute state after capture begins.
+      if (!vTracks.length) throw new Error('The page player did not expose a capturable video track.');
       video.muted = oldMuted;
 
       const type = recorderType();
       const options = {};
       if (type) options.mimeType = type;
-      options.videoBitsPerSecond = 8000000;
+      options.videoBitsPerSecond = 10000000;
       if (aTracks.length) options.audioBitsPerSecond = 192000;
       recorder = new MediaRecorder(new MediaStream([...vTracks, ...aTracks]), options);
       const chunks = [];
@@ -133,7 +139,6 @@
         recorder.onstop = resolve;
       });
 
-      // Re-seek after stream creation so the recording begins at lesson time zero.
       video.pause();
       await seek(video, 0);
       recorder.start(1000);
@@ -147,9 +152,9 @@
       }, 700);
 
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Decoded HLS capture exceeded the expected duration.')), Math.max(30000, (duration + 45) * 1000));
+        const timeout = setTimeout(() => reject(new Error('Decoded page capture exceeded the expected duration.')), Math.max(30000, (duration + 45) * 1000));
         const ended = () => { clearTimeout(timeout); resolve(); };
-        const failed = () => { clearTimeout(timeout); reject(new Error('The page video failed during HLS capture.')); };
+        const failed = () => { clearTimeout(timeout); reject(new Error('The page video failed during capture.')); };
         video.addEventListener('ended', ended, { once: true });
         video.addEventListener('error', failed, { once: true });
       });
@@ -158,7 +163,7 @@
       await stopped;
       const outType = recorder.mimeType || type || 'video/webm';
       const blob = new Blob(chunks, { type: outType });
-      if (blob.size < 32768) throw new Error('Decoded HLS capture produced an unexpectedly small file.');
+      if (blob.size < 32768) throw new Error('Decoded page capture produced an unexpectedly small file.');
       const ext = /mp4/i.test(outType) ? '.mp4' : '.webm';
       const filename = `${title()}${ext}`;
       save(blob, filename);
@@ -180,24 +185,32 @@
     }
   }
 
-  function isHlsRowButton(button) {
-    const row = button.closest('.pvd-item');
-    return !!row?.querySelector('.pvd-meta')?.textContent?.includes('HLS Video');
+  function rowMeta(button) {
+    return button.closest('.pvd-item')?.querySelector('.pvd-meta')?.textContent || '';
   }
-
-  function isHlsDownloadAll(button) {
+  function isHlsRowButton(button) { return rowMeta(button).includes('HLS Video'); }
+  function isYouTubeVideoButton(button) {
+    if (!isYouTube) return false;
+    if (!button.closest('.pvd-item')) return false;
+    const meta = rowMeta(button);
+    return /Video|MP4|WebM/i.test(meta) && !/Audio/i.test(meta);
+  }
+  function isSingleVideoDownloadAll(button) {
     if (button.id !== 'page-video-downloader-all') return false;
     const panel = button.closest('#page-video-downloader-panel');
-    const hlsRows = [...(panel?.querySelectorAll('.pvd-item') || [])].filter(row => row.querySelector('.pvd-meta')?.textContent?.includes('HLS Video'));
-    return hlsRows.length === 1;
+    const rows = [...(panel?.querySelectorAll('.pvd-item') || [])];
+    if (rows.length !== 1 && !isYouTube) return false;
+    if (isYouTube) return rows.some(row => /Video|MP4|WebM/i.test(row.querySelector('.pvd-meta')?.textContent || '') && !/Audio/i.test(row.querySelector('.pvd-meta')?.textContent || ''));
+    return rows.length === 1 && rows[0].querySelector('.pvd-meta')?.textContent?.includes('HLS Video');
   }
 
-  // Replace HLS button wording so users know this path creates a normal playable file.
   const decorate = () => {
     for (const row of document.querySelectorAll('#page-video-downloader-panel .pvd-item')) {
-      if (!row.querySelector('.pvd-meta')?.textContent?.includes('HLS Video')) continue;
+      const meta = row.querySelector('.pvd-meta')?.textContent || '';
       const b = row.querySelector('button');
-      if (b && !busy) b.textContent = 'Download MP4';
+      if (!b || busy) continue;
+      if (meta.includes('HLS Video')) b.textContent = 'Download MP4';
+      else if (isYouTube && /Video|MP4|WebM/i.test(meta) && !/Audio/i.test(meta)) b.textContent = 'Download Video';
     }
   };
   new MutationObserver(decorate).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
@@ -205,13 +218,17 @@
   document.addEventListener('click', e => {
     const button = e.target.closest('#page-video-downloader-panel button');
     if (!button || busy) return;
-    if (!isHlsRowButton(button) && !isHlsDownloadAll(button)) return;
+    const hls = isHlsRowButton(button);
+    const yt = isYouTubeVideoButton(button);
+    const all = isSingleVideoDownloadAll(button);
+    if (!hls && !yt && !all) return;
 
-    // Intercept the old raw-.ts HLS path. We capture the already-decoded page player instead.
+    // HLS: avoid raw .ts. YouTube: avoid signed googlevideo refetches that can return 403.
+    // Record the already-authorized, already-decoded page player instead.
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    captureHls().catch(err => status(`HLS MP4 capture failed: ${err.message || err}`, 0));
+    captureDecodedPageVideo(isYouTube ? 'YouTube video' : 'HLS video').catch(err => status(`Video capture failed: ${err.message || err}`, 0));
   }, true);
 
   document.addEventListener('avd:lesson-context-changed', () => setTimeout(decorate, 300));

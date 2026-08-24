@@ -6,9 +6,11 @@
 
 ## Current version
 
-**v2.9.4 — user-clicked HLS player warm-up**
+**v2.9.5 — active cross-frame player discovery**
 
-v2.9.4 handles lazy course players that expose their usable HLS manifest only after playback begins. On an explicit HLS Download click, the extension starts only the detected player frame, muted, for 3.5 seconds, restores its prior paused/audio state, rescans for the newly exposed manifest, and continues through the normal download pipeline.
+v2.9.5 no longer assumes the media request's reported frame is where the `<video>` lives. On warm-up or fallback, it enumerates the tab's frames, asks each injected helper whether it has a visible video, ranks matches by visible area, and targets the actual player. This covers players whose HLS request is initiated by the top page while their video element is nested in an iframe.
+
+The panel header displays the running version (for example, `Any Video Downloader v2.9.5`). Unpacked extensions do not update automatically: after replacing/pulling files, click **Reload** on `chrome://extensions` and refresh the target page once.
 
 This bounded warm-up is download-initiated only. Scan still never starts playback, unrelated videos are untouched, and the old multi-player autoplay behavior remains removed.
 

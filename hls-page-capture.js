@@ -190,6 +190,9 @@
   });
 
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
+    if(msg?.type==='PROBE_FRAME_VIDEO'){
+      const video=player(),rect=video?.getBoundingClientRect();sendResponse(video?{ok:true,visibleArea:Math.max(0,(rect?.width||0)*(rect?.height||0)),duration:Number.isFinite(video.duration)?video.duration:0}:{ok:false});return;
+    }
     if(msg?.type==='START_FRAME_VIDEO_WARMUP'){
       (async()=>{const video=player();if(!video)throw new Error('No video element was found in the detected player frame.');const wasPaused=video.paused,wasMuted=video.muted,oldVolume=video.volume;try{video.muted=true;video.volume=0;status('Loading the embedded video stream…',1);await video.play();await new Promise(resolve=>setTimeout(resolve,Math.max(2000,Math.min(5000,Number(msg.durationMs)||3500))));return{ok:true};}finally{try{if(wasPaused)video.pause();video.muted=wasMuted;video.volume=oldVolume;}catch(_){}}})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message||String(error)}));return true;
     }

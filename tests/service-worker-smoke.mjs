@@ -13,8 +13,9 @@ const chrome = {
   tabs: {
     onRemoved: noopEvent,
     onUpdated: noopEvent,
-    sendMessage: async (...args) => { lastTabMessage=args; return { ok:true }; }
+    sendMessage: async (...args) => { lastTabMessage=args;const type=args[1]?.type,frameId=args[2]?.frameId;if(type==='PROBE_FRAME_VIDEO')return frameId===7?{ok:true,visibleArea:50000}:{ok:false};return { ok:true }; }
   },
+  webNavigation: { getAllFrames: async () => [{frameId:0},{frameId:7}] },
   runtime: {
     onMessage: { addListener(fn) { runtimeListener = fn; } },
     getURL: p => `chrome-extension://test/${p}`,
@@ -84,6 +85,10 @@ const warmed=await message({type:'WARMUP_FRAME_VIDEO',frameId:7,durationMs:3500}
 assert.equal(warmed.ok,true,'embedded player warm-up should be routed');
 assert.equal(lastTabMessage?.[1]?.type,'START_FRAME_VIDEO_WARMUP');
 assert.equal(lastTabMessage?.[2]?.frameId,7,'warm-up should target the detected player frame');
+lastTabMessage=null;
+const discovered=await message({type:'CAPTURE_FRAME_VIDEO',frameId:0,label:'HLS video',filenameBase:'Lesson'});
+assert.equal(discovered.ok,true,'capture should discover a player when the candidate frame is wrong');
+assert.equal(lastTabMessage?.[2]?.frameId,7,'capture should route to the probed frame containing the video');
 
 await message({ type: 'CLEAR_MEDIA_CANDIDATES' });
 await message({ type: 'PAGE_MEDIA_CONTEXT', title: 'Lesson One', url: 'https://course.test/lesson' });

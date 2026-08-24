@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.9.5 - 2026-08-25
+
+- Probes every injected page/iframe frame and selects the largest visible video instead of trusting a possibly misleading HLS request frame ID.
+- Uses discovered-frame routing for both the 3.5-second warm-up and decoded HLS capture fallback.
+- Adds the loaded extension version to the panel header so unpacked-update problems are immediately visible.
+- Adds `webNavigation` solely to enumerate frame IDs in the current tab for targeted player messaging.
+- Added wrong-frame recovery, visible-player probing, permission, and version-display regression coverage.
+
 ## 2.9.4 - 2026-08-25
 
 - Added a download-click-only HLS warm-up for lazy players: play the detected frame muted for 3.5 seconds, then rescan and download the refreshed manifest.

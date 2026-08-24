@@ -8,6 +8,7 @@
     pageSignature: '', changeTimer: 0, epoch: Date.now(), currentLabel: ''
   };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const EXT_VERSION=chrome.runtime.getManifest?.().version||'';
   const sanitize = v => String(v || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0,170);
   const isHls = u => /\.m3u8(?:$|[?#])/i.test(u||'') || /[?&](?:format|type)=(?:application(?:%2F|\/)x-mpegurl|m3u8)(?:&|$)/i.test(u||'');
   const isDash = u => /\.mpd(?:$|[?#])/i.test(u||'');
@@ -98,7 +99,7 @@
   }
 
   function ensureLauncher(){if(state.launcher?.isConnected)return state.launcher;const b=document.createElement('button');b.id='page-video-downloader-launcher';b.type='button';b.title='Any Video Downloader';b.setAttribute('aria-label','Open Any Video Downloader');b.textContent='⬇';b.onclick=async e=>{e.preventDefault();e.stopPropagation();openPanel();await scan(false);};document.documentElement.appendChild(b);state.launcher=b;return b;}
-  function createPanel(){if(state.panel?.isConnected)return state.panel;const p=document.createElement('div');p.id='page-video-downloader-panel';p.innerHTML=`<div id="page-video-downloader-header"><span>Any Video Downloader</span><button id="page-video-downloader-close" type="button" aria-label="Close">×</button></div><div id="page-video-downloader-body"><div id="page-video-downloader-actions"><button id="page-video-downloader-all" type="button">⬇ Download All</button><button id="page-video-downloader-scan" class="secondary" type="button">↻ Scan</button></div><div id="page-video-downloader-summary">Ready.</div><div id="page-video-downloader-progress-wrap"><progress id="page-video-downloader-progress" max="100" value="0"></progress><span id="page-video-downloader-status"></span></div><div id="page-video-downloader-list"></div></div>`;document.documentElement.appendChild(p);p.querySelector('#page-video-downloader-close').onclick=closePanel;p.querySelector('#page-video-downloader-scan').onclick=()=>scan(true);p.querySelector('#page-video-downloader-all').onclick=downloadAll;state.panel=p;return p;}
+  function createPanel(){if(state.panel?.isConnected)return state.panel;const p=document.createElement('div');p.id='page-video-downloader-panel';p.innerHTML=`<div id="page-video-downloader-header"><span>Any Video Downloader${EXT_VERSION?` v${EXT_VERSION}`:''}</span><button id="page-video-downloader-close" type="button" aria-label="Close">×</button></div><div id="page-video-downloader-body"><div id="page-video-downloader-actions"><button id="page-video-downloader-all" type="button">⬇ Download All</button><button id="page-video-downloader-scan" class="secondary" type="button">↻ Scan</button></div><div id="page-video-downloader-summary">Ready.</div><div id="page-video-downloader-progress-wrap"><progress id="page-video-downloader-progress" max="100" value="0"></progress><span id="page-video-downloader-status"></span></div><div id="page-video-downloader-list"></div></div>`;document.documentElement.appendChild(p);p.querySelector('#page-video-downloader-close').onclick=closePanel;p.querySelector('#page-video-downloader-scan').onclick=()=>scan(true);p.querySelector('#page-video-downloader-all').onclick=downloadAll;state.panel=p;return p;}
   function openPanel(){const p=createPanel();p.style.display='block';state.panelOpen=true;render();}
   function closePanel(){if(state.panel)state.panel.style.display='none';state.panelOpen=false;}
   function setStatus(t){const el=document.getElementById('page-video-downloader-status');if(el)el.textContent=t;}
@@ -152,7 +153,7 @@
     if(!r?.ok){
       if(/(?:^|\.)youtube\.com$/i.test(location.hostname)&&/googlevideo\.com/i.test(i.url||''))throw new Error('YouTube did not expose a fresh downloadable stream URL. Reload the video page and scan again; real-time page recording was not started.');
       if(i.kind==='hls'&&/(?:decode|recorder|capture|convert|transport stream|MediaRecorder)/i.test(r?.error||'')){
-        if(Number(i.frameId)>0){const fallback=await chrome.runtime.sendMessage({type:'CAPTURE_FRAME_VIDEO',frameId:Number(i.frameId),label:'HLS video',filenameBase:pageTitle()});if(!fallback?.ok)throw new Error(`${r.error||'HLS conversion failed'} Embedded-player fallback failed: ${fallback?.error||'frame unavailable'}`);setStatus(`Capturing ${pageTitle()} from its embedded player…`);}else{document.dispatchEvent(new CustomEvent('avd:capture-request',{detail:{label:'HLS video',filenameBase:pageTitle()}}));setStatus('Using the already-decoded page video fallback…');}
+        const fallback=await chrome.runtime.sendMessage({type:'CAPTURE_FRAME_VIDEO',frameId:Number(i.frameId)||0,label:'HLS video',filenameBase:pageTitle()});if(!fallback?.ok)throw new Error(`${r.error||'HLS conversion failed'} Player-frame fallback failed: ${fallback?.error||'no frame with video was found'}`);setStatus(`Capturing ${pageTitle()} from the detected player…`);
         return;
       }
       throw new Error(r?.error||'Download failed');

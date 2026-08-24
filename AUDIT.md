@@ -1,4 +1,4 @@
-# Any Video Downloader v2.9.4 Technical Audit
+# Any Video Downloader v2.9.5 Technical Audit
 
 ## Scope
 
@@ -52,6 +52,8 @@ Fast offscreen HLS processing is attempted before page-decoded recording. The la
 When an HLS request originates in an embedded player, its Chrome frame ID is retained through detection and session persistence. If decoded capture is required, the service worker targets that frame, returns progress to the top panel, and supplies the top lesson title. The fallback no longer searches only the top document for a video element.
 
 On an explicit HLS Download action, a lazy player may be warmed for 3.5 seconds before the fetch. The warm-up is muted, bounded to one identified frame, restores the previous paused/audio state, and is followed by a network/declarative rescan. General Scan remains non-playing.
+
+Frame selection does not trust the request frame alone. The service worker enumerates the current tab's frames, probes each extension-injected helper, and ranks visible video elements by area before warm-up or capture. The UI displays its loaded version so users can verify that an unpacked extension was actually reloaded.
 
 ### DASH
 

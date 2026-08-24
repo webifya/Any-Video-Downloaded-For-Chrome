@@ -332,7 +332,7 @@ const AVD = (() => {
         const a = parseAttrs(line);
         let j = i + 1;
         while (j < lines.length && (!lines[j].trim() || lines[j].trim().startsWith('#'))) j++;
-        if (lines[j]) variants.push({ url: abs(base, lines[j].trim()), bandwidth: Number(a.BANDWIDTH || 0), audioGroup: a.AUDIO || '' });
+        if (lines[j]) variants.push({ url: abs(base, lines[j].trim()), bandwidth: Number(a.BANDWIDTH || 0), audioGroup: a.AUDIO || '', codecs: a.CODECS || '' });
       }
     }
     variants.sort((a, b) => b.bandwidth - a.bandwidth);
@@ -340,35 +340,54 @@ const AVD = (() => {
   }
 
   function parseHlsMedia(text, base) {
-    const lines = text.split(/\r?\n/), urls = [];
-    let mapUrl = null, encrypted = false, duration = 0;
+    const lines = text.split(/\r?\n/), segments = [];
+    let map = null, encrypted = false, duration = 0, pendingRange = null, previousRangeEnd = 0, previousRangeUrl = '';
+    const byteRange = value => { const m=String(value||'').match(/^(\d+)(?:@(\d+))?$/);return m?{length:Number(m[1]),offset:m[2]===undefined?null:Number(m[2])}:null; };
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
       if (line.startsWith('#EXT-X-KEY:') && !/METHOD=NONE/i.test(line)) encrypted = true;
       if (line.startsWith('#EXTINF:')) duration += Number((line.match(/^#EXTINF:([0-9.]+)/) || [])[1] || 0);
       if (line.startsWith('#EXT-X-MAP:')) {
-        const m = line.match(/URI="([^"]+)"/i);
-        if (m) mapUrl = abs(base, m[1]);
-      } else if (!line.startsWith('#')) urls.push(abs(base, line));
+        const attrs=parseAttrs(line);if(attrs.URI){const range=byteRange(attrs.BYTERANGE);map={url:abs(base,attrs.URI),range:range?{start:range.offset||0,end:(range.offset||0)+range.length-1}:null};}
+      } else if (line.startsWith('#EXT-X-BYTERANGE:')) pendingRange=byteRange(line.slice(line.indexOf(':')+1));
+      else if (!line.startsWith('#')) {
+        const url=abs(base,line);let range=null;
+        if(pendingRange){const start=pendingRange.offset===null&&url===previousRangeUrl?previousRangeEnd+1:(pendingRange.offset||0);range={start,end:start+pendingRange.length-1};previousRangeEnd=range.end;previousRangeUrl=url;pendingRange=null;}
+        segments.push({url,range});
+      }
     }
-    return { urls, mapUrl, encrypted, duration };
+    return { segments, map, encrypted, duration };
+  }
+
+  async function hlsPartBlob(part, label) {
+    const headers=part.range?{Range:`bytes=${part.range.start}-${part.range.end}`}:{ };
+    const response=await fetchResponse(part.url,label,{headers});
+    const blob=await response.blob();
+    if(!part.range||response.status===206)return blob;
+    return blob.slice(part.range.start,part.range.end+1);
   }
 
   async function hlsTrackBlob(info, tabId, label, startPct, endPct) {
     if (info.encrypted) throw new Error('This HLS stream is encrypted/DRM-protected.');
-    if (!info.urls.length) throw new Error(`No HLS ${label} segments were found.`);
+    if (!info.segments.length) throw new Error(`No HLS ${label} segments were found.`);
     const parts = [];
-    if (info.mapUrl) parts.push((await fetchResponse(info.mapUrl, `${label} initialization segment`)).blob());
-    if (parts[0] instanceof Promise) parts[0] = await parts[0];
-    for (let i = 0; i < info.urls.length; i++) {
-      parts.push(await (await fetchResponse(info.urls[i], `${label} segment`)).blob());
-      const pct = Math.round(startPct + ((i + 1) / info.urls.length) * (endPct - startPct));
-      report(tabId, pct, 'hls', i + 1, info.urls.length, `Downloading HLS ${label}… ${pct}%`);
+    if (info.map) parts.push(await hlsPartBlob(info.map, `${label} initialization segment`));
+    for (let i = 0; i < info.segments.length; i++) {
+      parts.push(await hlsPartBlob(info.segments[i], `${label} segment`));
+      const pct = Math.round(startPct + ((i + 1) / info.segments.length) * (endPct - startPct));
+      report(tabId, pct, 'hls', i + 1, info.segments.length, `Downloading HLS ${label}… ${pct}%`);
     }
-    const firstPath = new URL(info.urls[0]).pathname.toLowerCase();
-    const fmp4 = !!info.mapUrl || /\.m4s$|\.mp4$/i.test(firstPath);
+    const firstPath = new URL(info.segments[0].url).pathname.toLowerCase();
+    const fmp4 = !!info.map || /\.m4s$|\.mp4$/i.test(firstPath);
     return new Blob(parts, { type: label === 'audio' ? (fmp4 ? 'audio/mp4' : 'audio/aac') : (fmp4 ? 'video/mp4' : 'video/mp2t') });
+  }
+
+  function hlsVariantSupported(variant) {
+    const videoCodec=String(variant.codecs||'').split(',').map(x=>x.trim()).find(x=>/^(?:avc1|avc3|hvc1|hev1|av01|vp0?9)/i.test(x));
+    if(!videoCodec||typeof MediaSource==='undefined'||typeof MediaSource.isTypeSupported!=='function')return true;
+    const container=/^vp0?9/i.test(videoCodec)?'video/webm':'video/mp4';
+    try{return MediaSource.isTypeSupported(`${container}; codecs="${videoCodec}"`);}catch(_){return true;}
   }
 
   async function downloadHls(msg) {
@@ -384,7 +403,7 @@ const AVD = (() => {
       report(msg.tabId, 100, 'done', blob.size, blob.size, `Complete — ${msg.filenameBase}${ext}`);
       return { ok: true, message: `Downloaded ${msg.filenameBase}${ext}` };
     }
-    const variant = master.variants[0];
+    const variant = master.variants.find(hlsVariantSupported) || master.variants[0];
     const vInfo = parseHlsMedia(await fetchText(variant.url), variant.url);
     const video = await hlsTrackBlob(vInfo, msg.tabId, 'video', 3, 18);
     const matching = master.audios.filter(a => !variant.audioGroup || a.groupId === variant.audioGroup);
@@ -520,7 +539,7 @@ const AVD = (() => {
     return { ok: true, message: `Downloaded ${filename}` };
   }
 
-  return { downloadDirect, downloadMerged, downloadHls, downloadDash, report };
+  return { downloadDirect, downloadMerged, downloadHls, downloadDash, report, parseHlsMaster, parseHlsMedia, hlsVariantSupported };
 })();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

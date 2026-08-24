@@ -1,4 +1,4 @@
-# Any Video Downloader v2.9.6 Technical Audit
+# Any Video Downloader v2.10.0 Technical Audit
 
 ## Scope
 
@@ -12,6 +12,19 @@ The extension was reviewed for self-hosted media, GoHighLevel/course platforms, 
 4. `youtube-listener.js` bridges those candidates to the extension service worker.
 5. `offscreen-v2.js` is the media processor. It validates signed direct media, recovers incomplete byte-range downloads, assembles unencrypted HLS/DASH and locally combines accessible adaptive video/audio tracks.
 6. `offscreen.html` loads only the active processor.
+
+## v2.10.0 failure audit and findings
+
+The reported combined error was traced through both stages rather than treated as one frame-discovery problem. The first clause, `Chrome could not decode one of the selected media tracks`, originates in offscreen HLS assembly. The second clause is only a last-resort page-capture failure and cannot repair malformed assembled media when a site does not expose a capturable HTML `<video>`.
+
+The audit identified these root causes:
+
+1. `#EXT-X-BYTERANGE` and `EXT-X-MAP:BYTERANGE` were discarded. For playlists that store many fragments in one backing object, the downloader fetched that complete object once per playlist entry and concatenated duplicate files. Chrome correctly rejected the resulting track.
+2. HLS warm-up returned the actual discovered player frame, but `content.js` discarded it and restricted the post-play rescan to the candidate's older frame ID. A fresh manifest exposed by an iframe could therefore be ignored.
+3. Master playlists were sorted only by bandwidth. A highest-bitrate HEVC/other unsupported variant could be selected even when an AVC variant compatible with the installed Chrome build was available.
+4. The fallback message still said “visible video” after visibility stopped being an exclusion condition, obscuring whether the real boundary was an inaccessible/sandboxed player or absence of an HTML media element.
+
+The corrected pipeline retains explicit and implicit byte-range offsets, sends exact HTTP `Range` requests (and slices a full `200` response when a CDN ignores Range), follows the frame returned by warm-up, prefers the newest manifest from that frame, and selects the highest Chrome-supported advertised video codec. Page capture remains a last resort rather than the primary HLS engine.
 
 ## Major fixes
 
@@ -46,6 +59,8 @@ If the browser cannot decode/record a particular codec pair, the successfully fe
 ### HLS
 
 The HLS engine parses master variants and `EXT-X-MEDIA:TYPE=AUDIO`. Separate accessible audio renditions are paired with the selected video variant and locally merged when Chrome can decode them. fMP4 output remains MP4; assembled MPEG-TS is decoded and recorded into a genuine MP4 or WebM container. Raw `.ts` is never saved. If Chrome lacks a compatible decoder/recorder, the extension reports the limitation rather than creating a corrupt or mislabeled file.
+
+Media and initialization byte ranges are preserved, including implicit offsets that continue from the previous range. Master variants advertise codec strings when available; unsupported video codecs are skipped when Chrome exposes a compatible lower-bandwidth alternative.
 
 Fast offscreen HLS processing is attempted before page-decoded recording. The latter remains a compatibility fallback and no longer interrupts normal page playback for streams that can be assembled directly.
 
@@ -89,4 +104,4 @@ DRM or access-control bypass is intentionally outside the extension's behavior.
 
 ## Validation
 
-The validation workflow checks every extension/test script, parses and asserts the Manifest V3 wiring/version, and runs service-worker selection/context/deduplication tests, signed partial-range recovery, and regressions for event-driven SPA switching, YouTube probe/fallback behavior, HLS container guarantees, and DRM boundaries.
+The validation workflow checks every extension/test script, parses and asserts the Manifest V3 wiring/version, and runs service-worker selection/context/deduplication tests, signed partial-range recovery, HLS explicit/implicit byte-range parsing, codec compatibility selection, and regressions for event-driven SPA switching, YouTube probe/fallback behavior, HLS container guarantees, and DRM boundaries.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.10.0 - 2026-08-25
+
+- Completed an end-to-end audit of the reported offscreen-decode plus player-fallback failure.
+- Fixed HLS `EXT-X-BYTERANGE` and `EXT-X-MAP:BYTERANGE` handling, including implicit offsets and servers that answer a Range request with a full `200` response.
+- Uses the actual frame discovered by player warm-up when choosing the refreshed HLS manifest instead of reusing a stale request frame.
+- Parses HLS `CODECS` metadata and prefers the highest variant Chrome reports as decodable.
+- Replaced the misleading “no visible video” fallback error with an accurate capturable-media boundary.
+- Added byte-range parser, codec-selection, warmup-frame handoff, container, and existing DRM/performance regression coverage.
+
 ## 2.9.6 - 2026-08-25
 
 - Detects media elements inside open shadow roots used by component-based course players.

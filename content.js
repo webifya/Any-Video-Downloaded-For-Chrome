@@ -136,9 +136,11 @@
     let i=option.item;
     if(i.kind==='hls'){
       setStatus(`Starting ${pageTitle()} briefly to load its stream…`);
-      try{await chrome.runtime.sendMessage({type:'WARMUP_FRAME_VIDEO',frameId:Number(i.frameId)||0,durationMs:3500});}catch(_){}
+      let warmed=null;try{warmed=await chrome.runtime.sendMessage({type:'WARMUP_FRAME_VIDEO',frameId:Number(i.frameId)||0,durationMs:3500});}catch(_){}
       await pullNetwork(true,true);
-      const refreshed=[...state.candidates.values()].filter(x=>x.kind==='hls'&&((Number(i.frameId)||0)===(Number(x.frameId)||0))).sort((a,b)=>(b.seenAt||0)-(a.seenAt||0))[0];
+      const targetFrame=warmed?.ok&&Number.isInteger(Number(warmed.frameId))?Number(warmed.frameId):(Number(i.frameId)||0);
+      const hlsItems=[...state.candidates.values()].filter(x=>x.kind==='hls').sort((a,b)=>(b.seenAt||0)-(a.seenAt||0));
+      const refreshed=hlsItems.find(x=>Number(x.frameId||0)===targetFrame)||hlsItems[0];
       if(refreshed)i=refreshed;
       setStatus(`${pageTitle()}: stream loaded, preparing download…`);
     }
@@ -153,7 +155,7 @@
     if(!r?.ok){
       if(/(?:^|\.)youtube\.com$/i.test(location.hostname)&&/googlevideo\.com/i.test(i.url||''))throw new Error('YouTube did not expose a fresh downloadable stream URL. Reload the video page and scan again; real-time page recording was not started.');
       if(i.kind==='hls'&&/(?:decode|recorder|capture|convert|transport stream|MediaRecorder)/i.test(r?.error||'')){
-        const fallback=await chrome.runtime.sendMessage({type:'CAPTURE_FRAME_VIDEO',frameId:Number(i.frameId)||0,label:'HLS video',filenameBase:pageTitle()});if(!fallback?.ok)throw new Error(`${r.error||'HLS conversion failed'} Player-frame fallback failed: ${fallback?.error||'no frame with video was found'}`);setStatus(`Capturing ${pageTitle()} from the detected player…`);
+        const fallback=await chrome.runtime.sendMessage({type:'CAPTURE_FRAME_VIDEO',frameId:Number(i.frameId)||0,label:'HLS video',filenameBase:pageTitle()});if(!fallback?.ok)throw new Error(`${r.error||'HLS conversion failed'} Player fallback unavailable: ${fallback?.error||'no page media element was exposed'}`);setStatus(`Capturing ${pageTitle()} from the detected player…`);
         return;
       }
       throw new Error(r?.error||'Download failed');

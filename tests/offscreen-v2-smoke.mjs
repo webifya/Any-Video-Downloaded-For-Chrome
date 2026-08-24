@@ -59,6 +59,7 @@ const context = vm.createContext({
   URL: TestURL,
   DOMParser: class {},
   MediaRecorder: class {},
+  MediaSource: { isTypeSupported: type => !/hvc1|hev1/i.test(type) },
   MediaStream: class {},
   AudioContext: class {},
   document: {
@@ -84,6 +85,13 @@ const context = vm.createContext({
 
 vm.runInContext(fs.readFileSync(new URL('../offscreen-v2.js', import.meta.url), 'utf8'), context, { filename: 'offscreen-v2.js' });
 assert.equal(typeof runtimeListener, 'function', 'offscreen processor should register a message listener');
+
+const rangedHls = vm.runInContext(`AVD.parseHlsMedia('#EXTM3U\\n#EXT-X-MAP:URI="media.mp4",BYTERANGE="100@0"\\n#EXT-X-BYTERANGE:400@100\\nmedia.mp4\\n#EXT-X-BYTERANGE:500\\nmedia.mp4', 'https://cdn.test/path/index.m3u8')`, context);
+assert.deepEqual(JSON.parse(JSON.stringify(rangedHls.map.range)), { start:0, end:99 }, 'HLS initialization byte range must be retained');
+assert.deepEqual(JSON.parse(JSON.stringify(rangedHls.segments.map(x => x.range))), [{start:100,end:499},{start:500,end:999}], 'explicit and implicit HLS media byte ranges must be retained');
+const variants = vm.runInContext(`AVD.parseHlsMaster('#EXTM3U\\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,CODECS="hvc1.1.6.L120"\\nhevc.m3u8\\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,CODECS="avc1.4d401f"\\navc.m3u8', 'https://cdn.test/master.m3u8')`, context);
+assert.equal(vm.runInContext('AVD.hlsVariantSupported', context)(variants.variants[0]), false, 'unsupported HLS video codecs must not be selected merely because bitrate is highest');
+assert.equal(vm.runInContext('AVD.hlsVariantSupported', context)(variants.variants[1]), true, 'a Chrome-supported HLS variant must remain eligible');
 
 const result = await new Promise((resolve, reject) => {
   try {

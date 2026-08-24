@@ -252,7 +252,7 @@ async function playerFrames(tabId, preferredFrameId = 0) {
 }
 async function sendToPlayerFrame(tabId, preferredFrameId, message) {
   const frames=await playerFrames(tabId,preferredFrameId);
-  if(!frames.length)throw new Error('No visible video element was found in any page or embedded-player frame. Reload the extension and refresh this page once.');
+  if(!frames.length)throw new Error('No capturable HTML video element was exposed by the page or its injectable frames.');
   let last;
   for(const frame of frames){try{const response=await chrome.tabs.sendMessage(tabId,message,{frameId:frame.frameId});if(response?.ok)return{...response,frameId:frame.frameId};last=response?.error;}catch(error){last=error.message;}}
   throw new Error(last||'The detected video frame did not accept the request.');

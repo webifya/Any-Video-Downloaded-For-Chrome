@@ -6,13 +6,15 @@
 
 ## Current version
 
-**v2.9.6 — generated-frame and shadow-player discovery**
+**v2.10.0 — corrected HLS byte-range assembly and warmup routing**
+
+v2.10.0 fixes the audited causes of Chrome's “could not decode one of the selected media tracks” error on common course-player HLS playlists. It preserves `EXT-X-BYTERANGE` offsets instead of repeatedly concatenating whole backing files, follows the actual frame discovered during the 3.5-second warmup, and avoids an advertised high-bitrate codec when Chrome reports that codec unsupported.
 
 v2.9.6 also discovers video elements inside open shadow roots and generated player frames (`about:blank`, `blob:`, and origin-fallback frames). A real player that is temporarily CSS-hidden or still initializing remains eligible, while visible ready players continue to rank first.
 
 v2.9.5 no longer assumes the media request's reported frame is where the `<video>` lives. On warm-up or fallback, it enumerates the tab's frames, asks each injected helper whether it has a visible video, ranks matches by visible area, and targets the actual player. This covers players whose HLS request is initiated by the top page while their video element is nested in an iframe.
 
-The panel header displays the running version (for example, `Any Video Downloader v2.9.5`). Unpacked extensions do not update automatically: after replacing/pulling files, click **Reload** on `chrome://extensions` and refresh the target page once.
+The panel header displays the running version (for example, `Any Video Downloader v2.10.0`). Unpacked extensions do not update automatically: after replacing/pulling files, click **Reload** on `chrome://extensions` and refresh the target page once.
 
 This bounded warm-up is download-initiated only. Scan still never starts playback, unrelated videos are untouched, and the old multi-player autoplay behavior remains removed.
 

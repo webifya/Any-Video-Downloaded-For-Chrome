@@ -31,6 +31,7 @@ assert.match(hls, /transcodeTransportStream/, 'MPEG-TS HLS must pass through a r
 assert.doesNotMatch(hls, /saveBlob\([^\n]*\.ts/, 'the offscreen engine must never save raw .ts output');
 assert.match(hls, /ContentProtection/, 'DASH content protection must remain rejected');
 assert.match(hls, /info\.encrypted/, 'encrypted HLS must remain rejected');
+assert.match(hls, /EXT-X-BYTERANGE[\s\S]*Range:`bytes=\$\{part\.range\.start\}-\$\{part\.range\.end\}`/, 'HLS byte-range playlists must fetch declared ranges instead of duplicating whole backing files');
 
 assert.match(content, /avd:youtube-refresh[\s\S]*DOWNLOAD_MEDIA[\s\S]*avd:youtube-refresh/, 'YouTube downloads should refresh signed streams and retry once');
 assert.doesNotMatch(content, /YouTube video['"]?\}\}\)\)|detail:\{label:'YouTube video'/, 'YouTube failure must not start the real-time capture fallback');
@@ -40,6 +41,7 @@ assert.doesNotMatch(capture, /new MutationObserver/, 'capture fallback must not 
 assert.match(content, /i\.kind==='hls'[\s\S]*CAPTURE_FRAME_VIDEO/, 'failed HLS conversion should retain cross-frame decoded-page capture as fallback');
 assert.match(content, /CAPTURE_FRAME_VIDEO[\s\S]*frameId/, 'embedded HLS fallback must target the candidate frame');
 assert.match(content, /i\.kind==='hls'[\s\S]*WARMUP_FRAME_VIDEO[\s\S]*3500[\s\S]*pullNetwork/, 'HLS download clicks should warm only the detected player and rescan');
+assert.match(content, /warmed\?\.ok[\s\S]*warmed\.frameId[\s\S]*targetFrame[\s\S]*hlsItems/, 'post-warmup HLS selection must follow the frame actually discovered by the worker');
 assert.doesNotMatch(capture, /window\.top\s*!==\s*window\.self\)\s*return/, 'capture helper must remain available inside player frames');
 assert.match(capture, /START_FRAME_VIDEO_CAPTURE[\s\S]*filenameBase/, 'player frames must accept titled capture requests');
 assert.match(capture, /START_FRAME_VIDEO_WARMUP[\s\S]*video\.muted=true[\s\S]*video\.play\(\)[\s\S]*if\(wasPaused\)video\.pause/, 'frame warm-up must be muted, bounded, and restore paused state');

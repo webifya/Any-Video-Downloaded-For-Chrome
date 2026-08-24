@@ -24,7 +24,6 @@ function youtubeItagKind(url = '') {
     const mimeParam = decodedUrl(u.searchParams.get('mime') || u.searchParams.get('type') || '');
     if (/^audio\//i.test(mimeParam) || YT_AUDIO_ITAGS.has(itag)) return 'audio';
     if (/^video\//i.test(mimeParam)) return 'video';
-    // Unknown non-audio YouTube adaptive itags are much more commonly video-only.
     if (itag > 0) return 'video';
   } catch (_) {}
   return '';
@@ -99,18 +98,31 @@ function upsert(tabId, incoming) {
   const merged = {
     ...previous,
     ...item,
-    // Never replace useful metadata with a later zero/empty range response.
     contentLength: Number(item.contentLength || 0) || Number(previous.contentLength || 0),
     totalLength: Number(item.totalLength || 0) || Number(previous.totalLength || 0),
     width: Number(item.width || 0) || Number(previous.width || 0),
     height: Number(item.height || 0) || Number(previous.height || 0),
     bitrate: Number(item.bitrate || 0) || Number(previous.bitrate || 0),
     qualityLabel: item.qualityLabel || previous.qualityLabel || '',
+    progressive: Boolean(item.progressive || previous.progressive),
+    hasAudio: Boolean(item.hasAudio || previous.hasAudio),
+    source: item.source || previous.source || '',
     seenAt: Date.now()
   };
   if (idx >= 0) arr.splice(idx, 1);
   arr.unshift(merged);
   mediaByTab.set(tabId, arr.slice(0, 180));
+}
+
+function itemsForTab(tabId) {
+  const items = mediaByTab.get(tabId) || [];
+  // If YouTube exposes a complete progressive stream (video+audio together), prefer it and
+  // suppress separate adaptive tracks. This gives the user one playable file whenever possible.
+  const completeYoutube = items
+    .filter(x => x.kind === 'video' && x.source === 'youtube-progressive' && x.hasAudio)
+    .sort((a,b) => (b.height - a.height) || (b.bitrate - a.bitrate) || ((b.contentLength || 0) - (a.contentLength || 0)));
+  if (completeYoutube.length) return [completeYoutube[0]];
+  return items;
 }
 
 chrome.webRequest.onBeforeRequest.addListener(details => {
@@ -167,12 +179,16 @@ function needsFetchedDownload(url='') {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'GET_MEDIA_CANDIDATES') {
-    const tabId = sender.tab?.id; sendResponse({ ok: true, items: Number.isInteger(tabId) ? (mediaByTab.get(tabId) || []) : [] }); return;
+    const tabId = sender.tab?.id;
+    sendResponse({ ok: true, items: Number.isInteger(tabId) ? itemsForTab(tabId) : [] });
+    return;
   }
   if (msg?.type === 'UPSERT_MEDIA_CANDIDATES') {
     const tabId = sender.tab?.id;
-    if (Number.isInteger(tabId)) { for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source: item.source || 'player-response' }); sendResponse({ ok: true }); }
-    else sendResponse({ ok: false });
+    if (Number.isInteger(tabId)) {
+      for (const item of Array.isArray(msg.items) ? msg.items : []) upsert(tabId, { ...item, source: item.source || 'player-response' });
+      sendResponse({ ok: true });
+    } else sendResponse({ ok: false });
     return;
   }
   if (msg?.type === 'CLEAR_MEDIA_CANDIDATES') {

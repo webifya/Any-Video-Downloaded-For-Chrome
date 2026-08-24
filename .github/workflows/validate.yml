@@ -21,6 +21,7 @@ jobs:
           node --check offscreen.js
           node --check youtube-listener.js
           node --check youtube-probe.js
+          node --check tests/service-worker-smoke.mjs
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json OK')"
       - name: Basic manifest assertions
@@ -32,3 +33,5 @@ jobs:
           if (!Array.isArray(m.permissions)) throw new Error('Missing permissions');
           console.log(`Any Video Downloader ${m.version} validated`);
           NODE
+      - name: Run media selection smoke tests
+        run: node tests/service-worker-smoke.mjs

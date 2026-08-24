@@ -18,8 +18,7 @@ jobs:
         run: |
           node --check service-worker.js
           node --check content.js
-          node --check offscreen.js
-          node --check format-guard.js
+          node --check offscreen-v2.js
           node --check youtube-listener.js
           node --check youtube-probe.js
           node --check tests/service-worker-smoke.mjs
@@ -34,10 +33,8 @@ jobs:
           if (!m.version) throw new Error('Missing version');
           if (!Array.isArray(m.permissions)) throw new Error('Missing permissions');
           const html = fs.readFileSync('offscreen.html','utf8');
-          for (const f of ['offscreen.js','format-guard.js']) {
-            if (!html.includes(f)) throw new Error(`offscreen.html does not load ${f}`);
-            if (!fs.existsSync(f)) throw new Error(`Missing ${f}`);
-          }
+          if (!html.includes('offscreen-v2.js')) throw new Error('offscreen.html does not load offscreen-v2.js');
+          if (!fs.existsSync('offscreen-v2.js')) throw new Error('Missing offscreen-v2.js');
           console.log(`Any Video Downloader ${m.version} validated`);
           NODE
       - name: Run media selection smoke tests

@@ -48,15 +48,16 @@ function safeExt(mime='', kind='video', url='') {
   return '.mp4';
 }
 
-function saveBlob(bytes, type, filename) {
-  const blob = new Blob([bytes], { type });
+function saveBlobObject(blob, filename) {
   const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = blobUrl; a.download = filename;
+  const a = document.createElement('a');
+  a.href = blobUrl; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(blobUrl), 180000);
 }
+function saveBlob(bytes, type, filename) { saveBlobObject(new Blob([bytes], { type }), filename); }
 
-async function responseToBytes(r, tabId, kind, startPct=3, endPct=96) {
+async function responseToBytes(r, tabId, label, startPct=3, endPct=96) {
   const expected=Number(r.headers.get('content-length')||0)||0;
   const reader=r.body?.getReader?.();
   const chunks=[]; let received=0;
@@ -67,31 +68,169 @@ async function responseToBytes(r, tabId, kind, startPct=3, endPct=96) {
     if (value?.byteLength) { chunks.push(value); received += value.byteLength; }
     if (expected > 0) {
       const pct=Math.max(startPct,Math.min(endPct,Math.round(startPct+(received/expected)*(endPct-startPct))));
-      report(tabId,pct,'direct',received,expected,`Downloading ${kind === 'audio' ? 'audio' : 'video'}… ${pct}%`);
+      report(tabId,pct,'fetch',received,expected,`${label}… ${pct}%`);
     }
   }
   return concat(chunks);
 }
 
+async function fetchMediaObject(media, tabId, label, startPct, endPct) {
+  let r;
+  try { r=await fetchWithRetry(media.url, label, 1); }
+  catch (firstError) {
+    if (!media.originalUrl || media.originalUrl === media.url) throw firstError;
+    r=await fetchWithRetry(media.originalUrl, label, 1);
+  }
+  const responseType=(r.headers.get('content-type')||media.mime||'').toLowerCase();
+  if (/text\/|application\/(?:json|xml|html)/.test(responseType)) throw new Error(`Media server returned ${responseType || 'a non-media response'} instead of media.`);
+  const bytes=await responseToBytes(r,tabId,label,startPct,endPct);
+  if (bytes.byteLength < 16384) throw new Error(`${label} returned only a tiny/expired response. Play the video again and click Scan.`);
+  return { bytes, mime: responseType && !/octet-stream/.test(responseType) ? responseType : (media.mime || (media.kind==='audio'?'audio/mp4':'video/mp4')) };
+}
+
 async function downloadDirect(url, originalUrl, filenameBase, tabId, mime='', kind='video') {
   report(tabId,2,'direct',0,0,`Preparing ${kind === 'audio' ? 'audio' : 'video'} download…`);
-  let r;
-  try { r=await fetchWithRetry(url, kind === 'audio' ? 'audio stream' : 'video stream', 1); }
-  catch (firstError) {
-    if (!originalUrl || originalUrl === url) throw firstError;
-    r=await fetchWithRetry(originalUrl, kind === 'audio' ? 'audio stream' : 'video stream', 1);
-  }
-  const responseType=(r.headers.get('content-type')||mime||'').toLowerCase();
-  if (/text\/|application\/(?:json|xml|html)/.test(responseType)) throw new Error(`Media server returned ${responseType || 'a non-media response'} instead of media.`);
-  const bytes=await responseToBytes(r,tabId,kind);
-  if (bytes.byteLength < 16384) throw new Error('The media URL returned only a tiny/expired response. Play the video again and click Scan.');
-  const finalMime=responseType && !/octet-stream/.test(responseType) ? responseType : (mime || (kind==='audio'?'audio/mp4':'video/mp4'));
-  const ext=safeExt(finalMime,kind,url);
+  const result=await fetchMediaObject({url,originalUrl,mime,kind},tabId,`Downloading ${kind === 'audio' ? 'audio' : 'video'}`,3,96);
+  const ext=safeExt(result.mime,kind,url);
   const filename=`${filenameBase}${kind==='audio'?' - audio':''}${ext}`;
-  report(tabId,98,'save',bytes.byteLength,bytes.byteLength,'Saving file… 98%');
-  saveBlob(bytes,finalMime,filename);
-  report(tabId,100,'done',bytes.byteLength,bytes.byteLength,`Complete — ${filename}`);
+  report(tabId,98,'save',result.bytes.byteLength,result.bytes.byteLength,'Saving file… 98%');
+  saveBlob(result.bytes,result.mime,filename);
+  report(tabId,100,'done',result.bytes.byteLength,result.bytes.byteLength,`Complete — ${filename}`);
   return {ok:true,message:`Downloaded ${filename}`};
+}
+
+// ---------- Local adaptive-track merger ----------
+function waitMediaReady(el, timeoutMs=20000) {
+  return new Promise((resolve,reject) => {
+    if (el.readyState >= 1 && Number.isFinite(el.duration)) return resolve();
+    const timer=setTimeout(()=>finish(new Error('Timed out while preparing media for local merge.')),timeoutMs);
+    const finish=(err)=>{clearTimeout(timer);el.removeEventListener('loadedmetadata',ok);el.removeEventListener('error',bad);err?reject(err):resolve();};
+    const ok=()=>finish();
+    const bad=()=>finish(new Error('Chrome could not decode one of the adaptive tracks for local merge.'));
+    el.addEventListener('loadedmetadata',ok,{once:true});
+    el.addEventListener('error',bad,{once:true});
+  });
+}
+
+function bestRecorderType() {
+  const types=[
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  return types.find(t => { try { return MediaRecorder.isTypeSupported(t); } catch (_) { return false; } }) || '';
+}
+
+async function mergeLocalBlobs(videoData, audioData, filenameBase, tabId, options={}) {
+  if (typeof MediaRecorder === 'undefined') throw new Error('This Chrome build does not support the local MediaRecorder merge engine.');
+  const videoBlob=new Blob([videoData.bytes],{type:videoData.mime||'video/mp4'});
+  const audioBlob=new Blob([audioData.bytes],{type:audioData.mime||'audio/mp4'});
+  const videoUrl=URL.createObjectURL(videoBlob), audioUrl=URL.createObjectURL(audioBlob);
+  const video=document.createElement('video'), audio=document.createElement('audio');
+  video.preload='auto'; audio.preload='auto'; video.playsInline=true; video.muted=true;
+  video.src=videoUrl; audio.src=audioUrl;
+  video.style.display='none'; audio.style.display='none';
+  document.body.append(video,audio);
+
+  let audioCtx=null, syncTimer=null, progressTimer=null;
+  try {
+    await Promise.all([waitMediaReady(video),waitMediaReady(audio)]);
+    const duration=Math.min(
+      Number.isFinite(video.duration)&&video.duration>0?video.duration:Infinity,
+      Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:Infinity
+    );
+    if (!Number.isFinite(duration) || duration <= 0) throw new Error('Could not determine track duration for local merge.');
+
+    const capture=video.captureStream?.bind(video) || video.webkitCaptureStream?.bind(video);
+    if (!capture) throw new Error('This Chrome build does not support media-element capture required for local merging.');
+    const videoStream=capture();
+    const videoTracks=videoStream.getVideoTracks();
+    if (!videoTracks.length) throw new Error('No decodable video track was available to the local merge engine.');
+
+    audioCtx=new AudioContext();
+    await audioCtx.resume();
+    const source=audioCtx.createMediaElementSource(audio);
+    const destination=audioCtx.createMediaStreamDestination();
+    source.connect(destination);
+    const audioTracks=destination.stream.getAudioTracks();
+    if (!audioTracks.length) throw new Error('No decodable audio track was available to the local merge engine.');
+
+    const mergedStream=new MediaStream([...videoTracks,...audioTracks]);
+    const mimeType=bestRecorderType();
+    const recOptions={};
+    if (mimeType) recOptions.mimeType=mimeType;
+    const sourceBitrate=Number(options.bitrate||0);
+    if (sourceBitrate>0) recOptions.videoBitsPerSecond=Math.max(800000,Math.min(12000000,sourceBitrate));
+    recOptions.audioBitsPerSecond=192000;
+    const recorder=new MediaRecorder(mergedStream,recOptions);
+    const chunks=[];
+
+    const done=new Promise((resolve,reject)=>{
+      recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data);};
+      recorder.onerror=e=>reject(e.error||new Error('Local media merge failed.'));
+      recorder.onstop=()=>resolve();
+    });
+
+    video.currentTime=0; audio.currentTime=0;
+    report(tabId,31,'merge',0,duration,'Merging video + audio locally… 31%');
+    recorder.start(1000);
+    await Promise.all([video.play(),audio.play()]);
+
+    syncTimer=setInterval(()=>{
+      if (!video.paused && !audio.paused && Math.abs(video.currentTime-audio.currentTime)>0.20) {
+        try { audio.currentTime=video.currentTime; } catch (_) {}
+      }
+    },1000);
+    progressTimer=setInterval(()=>{
+      const t=Math.max(0,Math.min(duration,video.currentTime||0));
+      const pct=Math.max(31,Math.min(97,Math.round(31+(t/duration)*66)));
+      report(tabId,pct,'merge',t,duration,`Merging locally… ${pct}% (${Math.floor(t)}/${Math.ceil(duration)} sec)`);
+    },1000);
+
+    await new Promise((resolve,reject)=>{
+      const timeout=setTimeout(()=>reject(new Error('Local merge exceeded the expected media duration.')),Math.max(30000,(duration+30)*1000));
+      const finish=()=>{clearTimeout(timeout);resolve();};
+      video.addEventListener('ended',finish,{once:true});
+      video.addEventListener('error',()=>{clearTimeout(timeout);reject(new Error('Video decode failed during local merge.'));},{once:true});
+    });
+    if (recorder.state !== 'inactive') recorder.stop();
+    await done;
+
+    const outType=recorder.mimeType || mimeType || 'video/webm';
+    const output=new Blob(chunks,{type:outType});
+    if (output.size < 32768) throw new Error('Local merge produced an unexpectedly small output file.');
+    const ext=/mp4/i.test(outType)?'.mp4':'.webm';
+    const filename=`${filenameBase}${ext}`;
+    report(tabId,99,'save',output.size,output.size,'Saving merged file… 99%');
+    saveBlobObject(output,filename);
+    report(tabId,100,'done',output.size,output.size,`Complete — ${filename}`);
+    return {ok:true,merged:true,message:`Downloaded merged video with audio: ${filename}`};
+  } finally {
+    if(syncTimer)clearInterval(syncTimer);
+    if(progressTimer)clearInterval(progressTimer);
+    try{video.pause();audio.pause();}catch(_){}
+    try{video.remove();audio.remove();}catch(_){}
+    try{if(audioCtx)await audioCtx.close();}catch(_){}
+    URL.revokeObjectURL(videoUrl); URL.revokeObjectURL(audioUrl);
+  }
+}
+
+async function downloadMergedMedia(video, audio, filenameBase, tabId) {
+  report(tabId,2,'pair-fetch',0,0,'Preparing adaptive video + audio…');
+  const videoData=await fetchMediaObject(video,tabId,'Downloading video track',3,18);
+  const audioData=await fetchMediaObject(audio,tabId,'Downloading audio track',19,30);
+  try {
+    return await mergeLocalBlobs(videoData,audioData,filenameBase,tabId,{bitrate:video.bitrate});
+  } catch (mergeError) {
+    // Never lose a successful fetch. If the browser codec/recorder cannot merge this pair,
+    // save the two valid tracks and clearly report why.
+    const vExt=safeExt(videoData.mime,'video',video.url), aExt=safeExt(audioData.mime,'audio',audio.url);
+    saveBlob(videoData.bytes,videoData.mime,`${filenameBase}${vExt}`);
+    saveBlob(audioData.bytes,audioData.mime,`${filenameBase} - audio${aExt}`);
+    throw new Error(`${mergeError.message} The valid video and audio tracks were saved separately as a fallback.`);
+  }
 }
 
 // ---------- HLS ----------
@@ -146,7 +285,7 @@ async function loadMediaPlaylist(url) {
 async function loadHls(url) {
   const text=await fetchText(url);
   const master=parseMaster(text,url);
-  if (!master.variants.length) return {video:{playlistUrl:url,...parseMedia(text,url)},audio:null};
+  if (!master.variants.length) return {video:{playlistUrl:url,...parseMedia(text,url)},audio:null,bitrate:0};
   let lastError;
   for (const variant of master.variants) {
     try {
@@ -155,7 +294,7 @@ async function loadHls(url) {
       const matching=master.audios.filter(a=>!variant.audioGroup || a.groupId===variant.audioGroup);
       const audioDef=matching.find(a=>a.isDefault) || matching[0] || null;
       const audio=audioDef ? await loadMediaPlaylist(audioDef.url).catch(()=>null) : null;
-      return {video,audio};
+      return {video,audio,bitrate:variant.bw};
     } catch(e){lastError=e;}
   }
   throw lastError || new Error('No playable HLS variant found.');
@@ -177,15 +316,25 @@ async function downloadPlaylistTrack(info, tabId, label, startPct, endPct) {
 async function downloadHls(url, filenameBase, tabId) {
   report(tabId,1,'playlist',0,0,'Reading HLS playlist…');
   const info=await loadHls(url);
-  const video=await downloadPlaylistTrack(info.video,tabId,'video',3,info.audio?70:96);
+  const video=await downloadPlaylistTrack(info.video,tabId,'video',3,info.audio?18:96);
   if (video.bytes.byteLength<100000) throw new Error('Detected HLS stream is only a tiny preview/partial clip.');
-  saveBlob(video.bytes,video.fmp4?'video/mp4':'video/mp2t',`${filenameBase}.mp4`);
   if (info.audio?.urls?.length) {
-    const audio=await downloadPlaylistTrack(info.audio,tabId,'audio',72,96);
-    if (audio.bytes.byteLength>16000) saveBlob(audio.bytes,audio.fmp4?'audio/mp4':'audio/aac',`${filenameBase} - audio.m4a`);
-    report(tabId,100,'done',1,1,'HLS complete — video and separate audio track saved.');
-    return {ok:true,separateTracks:true,message:'HLS video and audio were delivered separately and saved as separate files.'};
+    const audio=await downloadPlaylistTrack(info.audio,tabId,'audio',19,30);
+    if (audio.bytes.byteLength>16000) {
+      try {
+        return await mergeLocalBlobs(
+          {bytes:video.bytes,mime:video.fmp4?'video/mp4':'video/mp2t'},
+          {bytes:audio.bytes,mime:audio.fmp4?'audio/mp4':'audio/aac'},
+          filenameBase,tabId,{bitrate:info.bitrate}
+        );
+      } catch (e) {
+        saveBlob(video.bytes,video.fmp4?'video/mp4':'video/mp2t',`${filenameBase}.mp4`);
+        saveBlob(audio.bytes,audio.fmp4?'audio/mp4':'audio/aac',`${filenameBase} - audio.m4a`);
+        throw new Error(`${e.message} HLS tracks were saved separately as a fallback.`);
+      }
+    }
   }
+  saveBlob(video.bytes,video.fmp4?'video/mp4':'video/mp2t',`${filenameBase}.mp4`);
   report(tabId,100,'done',1,1,`Complete — ${filenameBase}.mp4`);
   return {ok:true,message:`Downloaded ${filenameBase}.mp4`};
 }
@@ -237,21 +386,38 @@ async function parseDash(url){
   for(const adap of doc.querySelectorAll('AdaptationSet'))for(const rep of adap.querySelectorAll(':scope > Representation'))reps.push(buildRepresentation(rep,adap,url,duration));
   return reps.filter(r=>r.direct||r.segments.length);
 }
-async function downloadRep(rep,filename,tabId,startPct,endPct){
-  if(rep.direct&&!rep.segments.length){const bytes=await fetchBuffer(rep.direct,'DASH media');saveBlob(bytes,rep.mime||'application/octet-stream',filename);return;}
+async function downloadRepBytes(rep,tabId,startPct,endPct){
+  if(rep.direct&&!rep.segments.length){
+    const r=await fetchWithRetry(rep.direct,'DASH media');
+    return {bytes:await responseToBytes(r,tabId,`Downloading DASH ${rep.kind||'track'}`,startPct,endPct),mime:rep.mime||r.headers.get('content-type')||'application/octet-stream'};
+  }
   const chunks=[];const total=rep.segments.length;
-  for(let i=0;i<total;i++){chunks.push(await fetchBuffer(rep.segments[i],'DASH segment'));const pct=Math.round(startPct+(i+1)/Math.max(1,total)*(endPct-startPct));report(tabId,pct,'dash',i+1,total,`Downloading DASH ${rep.kind||'track'}… ${i+1}/${total} (${pct}%)`);}
-  saveBlob(concat(chunks),rep.mime||'application/octet-stream',filename);
+  for(let i=0;i<total;i++){
+    chunks.push(await fetchBuffer(rep.segments[i],'DASH segment'));
+    const pct=Math.round(startPct+(i+1)/Math.max(1,total)*(endPct-startPct));
+    report(tabId,pct,'dash',i+1,total,`Downloading DASH ${rep.kind||'track'}… ${i+1}/${total} (${pct}%)`);
+  }
+  return {bytes:concat(chunks),mime:rep.mime||'application/octet-stream'};
 }
 async function downloadDash(url,filenameBase,tabId){
-  report(tabId,2,'dash-manifest',0,0,'Reading DASH manifest…');const reps=await parseDash(url);if(!reps.length)throw new Error('No downloadable DASH representations found.');
+  report(tabId,2,'dash-manifest',0,0,'Reading DASH manifest…');
+  const reps=await parseDash(url);if(!reps.length)throw new Error('No downloadable DASH representations found.');
   const videos=reps.filter(r=>r.kind==='video').sort((a,b)=>(b.height-a.height)||(b.bandwidth-a.bandwidth));
   const audios=reps.filter(r=>r.kind==='audio').sort((a,b)=>b.bandwidth-a.bandwidth);const video=videos[0],audio=audios[0];
   if(!video&&!audio)throw new Error('No video/audio DASH tracks found.');
-  if(video)await downloadRep(video,`${filenameBase}${/webm/i.test(video.mime)?'.webm':'.mp4'}`,tabId,5,audio?72:96);
-  if(audio)await downloadRep(audio,`${filenameBase} - audio${/webm|opus|ogg/i.test(audio.mime)?'.webm':'.m4a'}`,tabId,video?74:5,96);
-  report(tabId,100,'done',1,1,audio&&video?'DASH complete — video and audio tracks saved separately.':'DASH download complete.');
-  return {ok:true,separateTracks:!!(video&&audio),message:video&&audio?'DASH video and audio were downloaded separately.':'DASH media downloaded.'};
+  if(video&&audio){
+    const vd=await downloadRepBytes(video,tabId,5,18);
+    const ad=await downloadRepBytes(audio,tabId,19,30);
+    try { return await mergeLocalBlobs(vd,ad,filenameBase,tabId,{bitrate:video.bandwidth}); }
+    catch(e){
+      saveBlob(vd.bytes,vd.mime,`${filenameBase}${/webm/i.test(vd.mime)?'.webm':'.mp4'}`);
+      saveBlob(ad.bytes,ad.mime,`${filenameBase} - audio${/webm|opus|ogg/i.test(ad.mime)?'.webm':'.m4a'}`);
+      throw new Error(`${e.message} DASH tracks were saved separately as a fallback.`);
+    }
+  }
+  const only=video||audio;const d=await downloadRepBytes(only,tabId,5,96);
+  const filename=video?`${filenameBase}${/webm/i.test(d.mime)?'.webm':'.mp4'}`:`${filenameBase} - audio${/webm|opus|ogg/i.test(d.mime)?'.webm':'.m4a'}`;
+  saveBlob(d.bytes,d.mime,filename);report(tabId,100,'done',1,1,`Complete — ${filename}`);return {ok:true,message:`Downloaded ${filename}`};
 }
 
 chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
@@ -260,6 +426,7 @@ chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
   if(msg.type==='DOWNLOAD_HLS')promise=downloadHls(msg.url,msg.filenameBase,msg.tabId);
   else if(msg.type==='DOWNLOAD_DASH')promise=downloadDash(msg.url,msg.filenameBase,msg.tabId);
   else if(msg.type==='DOWNLOAD_DIRECT')promise=downloadDirect(msg.url,msg.originalUrl,msg.filenameBase,msg.tabId,msg.mime,msg.kind);
+  else if(msg.type==='DOWNLOAD_MERGED_MEDIA')promise=downloadMergedMedia(msg.video,msg.audio,msg.filenameBase,msg.tabId);
   if(!promise)return;
   promise.then(sendResponse).catch(err=>{report(msg.tabId,0,'error',0,0,`Download failed: ${err.message||String(err)}`);sendResponse({ok:false,error:err.message||String(err)});});
   return true;

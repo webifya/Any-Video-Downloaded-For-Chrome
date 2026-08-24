@@ -22,6 +22,7 @@ jobs:
           node --check youtube-listener.js
           node --check youtube-probe.js
           node --check tests/service-worker-smoke.mjs
+          node --check tests/offscreen-v2-smoke.mjs
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest.json OK')"
       - name: Basic manifest assertions
@@ -35,7 +36,11 @@ jobs:
           const html = fs.readFileSync('offscreen.html','utf8');
           if (!html.includes('offscreen-v2.js')) throw new Error('offscreen.html does not load offscreen-v2.js');
           if (!fs.existsSync('offscreen-v2.js')) throw new Error('Missing offscreen-v2.js');
+          if (fs.existsSync('offscreen.js')) throw new Error('Obsolete offscreen.js should not remain in package');
+          if (fs.existsSync('format-guard.js')) throw new Error('Obsolete format-guard.js should not remain in package');
           console.log(`Any Video Downloader ${m.version} validated`);
           NODE
-      - name: Run media selection smoke tests
+      - name: Run service-worker smoke tests
         run: node tests/service-worker-smoke.mjs
+      - name: Run partial-range recovery smoke test
+        run: node tests/offscreen-v2-smoke.mjs

@@ -9,25 +9,22 @@ const DASH_RE = /\.mpd(?:$|[?#])/i;
 const REQUEST_FILTER = { urls: ['<all_urls>'], types: ['media', 'xmlhttprequest', 'other'] };
 
 const YT_AUDIO_ITAGS = new Set([139,140,141,171,172,249,250,251,256,258,325,328,599,600]);
-const YT_VIDEO_ITAGS = new Set([
-  18,22,37,38,59,78,133,134,135,136,137,138,160,242,243,244,245,246,247,248,
-  264,266,271,272,278,298,299,302,303,308,313,315,330,331,332,333,334,335,336,
-  337,394,395,396,397,398,399,400,401,571,694,695,696,697,698,699,700,701,702
-]);
 
 function decodedUrl(url = '') { try { return decodeURIComponent(url); } catch (_) { return url; } }
 function hostname(url = '') { try { return new URL(url).hostname.toLowerCase(); } catch (_) { return ''; } }
+function isGoogleVideo(h='') { return /(?:^|\.)googlevideo\.com$/i.test(h); }
+function isMetaCdn(h='') { return /(?:^|\.)fbcdn\.net$|(?:^|\.)cdninstagram\.com$/i.test(h); }
+function isVimeoCdn(h='') { return /(?:^|\.)vimeocdn\.com$|(?:^|\.)akamaized\.net$/i.test(h); }
 
 function youtubeItagKind(url = '') {
   if (!/googlevideo\.com\/videoplayback/i.test(url)) return '';
   try {
     const u = new URL(url);
     const itag = Number(u.searchParams.get('itag') || 0);
-    if (YT_AUDIO_ITAGS.has(itag)) return 'audio';
-    if (YT_VIDEO_ITAGS.has(itag)) return 'video';
-    const mime = decodedUrl(u.searchParams.get('mime') || u.searchParams.get('type') || '');
-    if (/^audio\//i.test(mime)) return 'audio';
-    if (/^video\//i.test(mime)) return 'video';
+    const mimeParam = decodedUrl(u.searchParams.get('mime') || u.searchParams.get('type') || '');
+    if (/^audio\//i.test(mimeParam) || YT_AUDIO_ITAGS.has(itag)) return 'audio';
+    if (/^video\//i.test(mimeParam)) return 'video';
+    // Unknown non-audio YouTube adaptive itags are much more commonly video-only.
     if (itag > 0) return 'video';
   } catch (_) {}
   return '';
@@ -36,11 +33,11 @@ function youtubeItagKind(url = '') {
 function platformPathKind(url = '') {
   const h = hostname(url);
   const d = decodedUrl(url);
-  if (/vimeocdn\.com$|\.vimeocdn\.com$|akamaized\.net$|\.akamaized\.net$/i.test(h)) {
+  if (isVimeoCdn(h)) {
     if (/\/(?:sep\/)?audio\//i.test(d) || /audio[_/-](?:init|segment|\d+)/i.test(d)) return 'audio';
     if (/\/(?:sep\/)?video\//i.test(d) || /video[_/-](?:init|segment|\d+)/i.test(d)) return 'video';
   }
-  if (/fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$/i.test(h)) {
+  if (isMetaCdn(h)) {
     if (/[?&](?:mime|type)=audio(?:%2F|\/)/i.test(d) || /\/audio\//i.test(d)) return 'audio';
     if (/[?&](?:mime|type)=video(?:%2F|\/)/i.test(d) || /\/video\//i.test(d)) return 'video';
   }
@@ -49,47 +46,71 @@ function platformPathKind(url = '') {
 
 function mediaKind(url = '', mime = '') {
   const m = String(mime).toLowerCase();
-  if (DASH_RE.test(url) || /(?:application\/)?dash\+xml/.test(m)) return 'dash';
+  if (DASH_RE.test(url) || /dash\+xml/.test(m)) return 'dash';
   if (HLS_RE.test(url) || /mpegurl|x-mpegurl/.test(m)) return 'hls';
   if (VIDEO_EXT_RE.test(url) || /^video\//.test(m)) return 'video';
   if (AUDIO_EXT_RE.test(url) || /^audio\//.test(m)) return 'audio';
-  const ytKind = youtubeItagKind(url); if (ytKind) return ytKind;
-  const decoded = decodedUrl(url);
-  if (/[?&](?:mime|type)=video(?:%2F|\/)/i.test(decoded)) return 'video';
-  if (/[?&](?:mime|type)=audio(?:%2F|\/)/i.test(decoded)) return 'audio';
+  const yt = youtubeItagKind(url); if (yt) return yt;
+  const d = decodedUrl(url);
+  if (/[?&](?:mime|type)=video(?:%2F|\/)/i.test(d)) return 'video';
+  if (/[?&](?:mime|type)=audio(?:%2F|\/)/i.test(d)) return 'audio';
   return platformPathKind(url);
+}
+
+function stripVolatileRangeParams(url = '') {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase();
+    if (isGoogleVideo(h)) {
+      for (const k of ['range','rn','rbuf']) u.searchParams.delete(k);
+    } else if (isMetaCdn(h)) {
+      for (const k of ['bytestart','byteend','range','start','end']) u.searchParams.delete(k);
+    } else if (isVimeoCdn(h)) {
+      for (const k of ['range','rn','rbuf']) u.searchParams.delete(k);
+    }
+    return u.href;
+  } catch (_) { return url; }
 }
 
 function canonicalMediaKey(item) {
   try {
-    const u = new URL(item.url); const h = u.hostname.toLowerCase();
-    if (/\.googlevideo\.com$|^googlevideo\.com$/i.test(h)) {
-      const itag = u.searchParams.get('itag') || item.itag || '';
-      return `youtube:${item.kind}:${itag || u.pathname}`;
+    const u = new URL(item.url);
+    const h = u.hostname.toLowerCase();
+    if (isGoogleVideo(h)) return `youtube:${item.kind}:${u.searchParams.get('itag') || item.itag || u.pathname}`;
+    if (isMetaCdn(h) || isVimeoCdn(h)) return `${isMetaCdn(h) ? 'meta' : 'vimeo'}:${item.kind}:${stripVolatileRangeParams(u.href)}`;
+    if (item.kind === 'hls' || item.kind === 'dash') {
+      const c = new URL(u.href);
+      for (const k of ['token','sig','signature','expires','exp']) c.searchParams.delete(k);
+      return `${item.kind}:${c.origin}${c.pathname}`;
     }
-    if (/fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$/i.test(h)) {
-      const clone = new URL(u.href); for (const key of ['bytestart','byteend','range','start','end']) clone.searchParams.delete(key);
-      return `meta:${item.kind}:${clone.origin}${clone.pathname}?${clone.searchParams.toString()}`;
-    }
-    if (/vimeocdn\.com$|\.vimeocdn\.com$|akamaized\.net$|\.akamaized\.net$/i.test(h)) {
-      const clone = new URL(u.href); for (const key of ['range','rn','rbuf']) clone.searchParams.delete(key);
-      return `vimeo:${item.kind}:${clone.origin}${clone.pathname}?${clone.searchParams.toString()}`;
-    }
-    return `${item.kind}:${u.href}`;
+    return `${item.kind}:${u.href.split('#')[0]}`;
   } catch (_) { return `${item.kind}:${item.url}`; }
 }
 
-function upsert(tabId, item) {
-  if (!Number.isInteger(tabId) || tabId < 0 || !item?.url) return;
-  const kind = item.kind || mediaKind(item.url, item.mime); if (!kind) return;
-  item = { ...item, kind };
+function upsert(tabId, incoming) {
+  if (!Number.isInteger(tabId) || tabId < 0 || !incoming?.url) return;
+  const kind = incoming.kind || mediaKind(incoming.url, incoming.mime);
+  if (!kind) return;
+  const item = { ...incoming, kind };
   const arr = mediaByTab.get(tabId) || [];
   const key = canonicalMediaKey(item);
   const idx = arr.findIndex(x => canonicalMediaKey(x) === key);
-  const merged = { ...(idx >= 0 ? arr[idx] : {}), ...item, seenAt: Date.now() };
+  const previous = idx >= 0 ? arr[idx] : {};
+  const merged = {
+    ...previous,
+    ...item,
+    // Never replace useful metadata with a later zero/empty range response.
+    contentLength: Number(item.contentLength || 0) || Number(previous.contentLength || 0),
+    totalLength: Number(item.totalLength || 0) || Number(previous.totalLength || 0),
+    width: Number(item.width || 0) || Number(previous.width || 0),
+    height: Number(item.height || 0) || Number(previous.height || 0),
+    bitrate: Number(item.bitrate || 0) || Number(previous.bitrate || 0),
+    qualityLabel: item.qualityLabel || previous.qualityLabel || '',
+    seenAt: Date.now()
+  };
   if (idx >= 0) arr.splice(idx, 1);
   arr.unshift(merged);
-  mediaByTab.set(tabId, arr.slice(0, 160));
+  mediaByTab.set(tabId, arr.slice(0, 180));
 }
 
 chrome.webRequest.onBeforeRequest.addListener(details => {
@@ -100,15 +121,20 @@ chrome.webRequest.onBeforeRequest.addListener(details => {
 
 chrome.webRequest.onHeadersReceived.addListener(details => {
   if (details.tabId < 0) return;
-  let mime = '', contentLength = 0, acceptRanges = '';
+  let mime = '', contentLength = 0, totalLength = 0, contentDisposition = '';
   for (const header of details.responseHeaders || []) {
     const name = String(header.name || '').toLowerCase();
-    if (name === 'content-type') mime = header.value || '';
-    else if (name === 'content-length') contentLength = Number(header.value || 0) || 0;
-    else if (name === 'accept-ranges') acceptRanges = header.value || '';
+    const value = header.value || '';
+    if (name === 'content-type') mime = value;
+    else if (name === 'content-length') contentLength = Number(value) || 0;
+    else if (name === 'content-disposition') contentDisposition = value;
+    else if (name === 'content-range') {
+      const m = value.match(/\/\s*(\d+)\s*$/);
+      if (m) totalLength = Number(m[1]) || 0;
+    }
   }
   const kind = mediaKind(details.url, mime); if (!kind) return;
-  upsert(details.tabId, { url: details.url, kind, mime, contentLength, acceptRanges, requestType: details.type || '', frameId: details.frameId, source: 'response' });
+  upsert(details.tabId, { url: details.url, kind, mime, contentLength, totalLength, contentDisposition, requestType: details.type || '', frameId: details.frameId, source: 'response' });
 }, REQUEST_FILTER, ['responseHeaders']);
 
 chrome.tabs.onRemoved.addListener(tabId => mediaByTab.delete(tabId));
@@ -136,7 +162,7 @@ function extensionFor(url, mime = '', kind = 'video') {
 }
 function needsFetchedDownload(url='') {
   const h=hostname(url);
-  return /googlevideo\.com$|\.googlevideo\.com$|fbcdn\.net$|\.fbcdn\.net$|cdninstagram\.com$|\.cdninstagram\.com$|vimeocdn\.com$|\.vimeocdn\.com$|akamaized\.net$|\.akamaized\.net$/i.test(h);
+  return isGoogleVideo(h) || isMetaCdn(h) || isVimeoCdn(h);
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -160,10 +186,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const filenameBase = safeBase(msg.filenameBase);
       const kind = msg.kind || mediaKind(msg.url, msg.mime);
       const tabId = sender.tab?.id;
+      if (!kind) throw new Error('Unsupported or expired media URL. Play the video and scan again.');
       if (kind === 'hls' || kind === 'dash' || needsFetchedDownload(msg.url)) {
         await ensureOffscreen();
         const type = kind === 'dash' ? 'DOWNLOAD_DASH' : kind === 'hls' ? 'DOWNLOAD_HLS' : 'DOWNLOAD_DIRECT';
-        const response = await chrome.runtime.sendMessage({ target:'offscreen', type, url:msg.url, filenameBase, tabId, mime:msg.mime || '', kind });
+        const response = await chrome.runtime.sendMessage({
+          target:'offscreen', type, url: stripVolatileRangeParams(msg.url), originalUrl: msg.url,
+          filenameBase, tabId, mime:msg.mime || '', kind, pageUrl: msg.pageUrl || sender.tab?.url || ''
+        });
         sendResponse(response || { ok:false, error:'No response from media downloader.' });
         return;
       }

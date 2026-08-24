@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.9.6 - 2026-08-25
+
+- Detects media elements inside open shadow roots used by component-based course players.
+- Injects the player helper into matching `about:blank`, `data:`, `blob:`, and other origin-fallback frames.
+- Keeps visible video area as the primary ranking signal but no longer rejects a genuine video merely because it is hidden or still initializing.
+- Bounds shadow-tree inspection and runs it only for explicit player probing/capture, preserving lightweight normal-page behavior.
+
 ## 2.9.5 - 2026-08-25
 
 - Probes every injected page/iframe frame and selects the largest visible video instead of trusting a possibly misleading HLS request frame ID.

@@ -10,13 +10,29 @@
     return r.width > 80 && r.height > 50 && s.display !== 'none' && s.visibility !== 'hidden';
   }
 
+  function pageVideos() {
+    const found = new Set(document.querySelectorAll('video'));
+    const roots = [document];
+    let inspected = 0;
+    while (roots.length && inspected < 8000) {
+      const root = roots.shift();
+      for (const el of root.querySelectorAll?.('*') || []) {
+        if (++inspected > 8000) break;
+        if (!el.shadowRoot) continue;
+        roots.push(el.shadowRoot);
+        for (const video of el.shadowRoot.querySelectorAll('video')) found.add(video);
+      }
+    }
+    return [...found];
+  }
+
   function player() {
-    return [...document.querySelectorAll('video')]
-      .filter(visible)
-      .sort((a, b) => {
-        const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
-        return br.width * br.height - ar.width * ar.height;
-      })[0] || null;
+    return pageVideos().sort((a, b) => {
+      const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+      const aArea = visible(a) ? ar.width * ar.height : 0;
+      const bArea = visible(b) ? br.width * br.height : 0;
+      return (bArea - aArea) || ((b.readyState || 0) - (a.readyState || 0)) || ((Number.isFinite(b.duration) ? b.duration : 0) - (Number.isFinite(a.duration) ? a.duration : 0));
+    })[0] || null;
   }
 
   function title() {
@@ -191,7 +207,7 @@
 
   chrome.runtime.onMessage.addListener((msg,sender,sendResponse)=>{
     if(msg?.type==='PROBE_FRAME_VIDEO'){
-      const video=player(),rect=video?.getBoundingClientRect();sendResponse(video?{ok:true,visibleArea:Math.max(0,(rect?.width||0)*(rect?.height||0)),duration:Number.isFinite(video.duration)?video.duration:0}:{ok:false});return;
+      const video=player(),rect=video?.getBoundingClientRect();sendResponse(video?{ok:true,visibleArea:visible(video)?Math.max(0,(rect?.width||0)*(rect?.height||0)):0,duration:Number.isFinite(video.duration)?video.duration:0,readyState:video.readyState||0}:{ok:false});return;
     }
     if(msg?.type==='START_FRAME_VIDEO_WARMUP'){
       (async()=>{const video=player();if(!video)throw new Error('No video element was found in the detected player frame.');const wasPaused=video.paused,wasMuted=video.muted,oldVolume=video.volume;try{video.muted=true;video.volume=0;status('Loading the embedded video stream…',1);await video.play();await new Promise(resolve=>setTimeout(resolve,Math.max(2000,Math.min(5000,Number(msg.durationMs)||3500))));return{ok:true};}finally{try{if(wasPaused)video.pause();video.muted=wasMuted;video.volume=oldVolume;}catch(_){}}})().then(sendResponse).catch(error=>sendResponse({ok:false,error:error.message||String(error)}));return true;

@@ -6,7 +6,9 @@
 
 ## Current version
 
-**v2.9.5 — active cross-frame player discovery**
+**v2.9.6 — generated-frame and shadow-player discovery**
+
+v2.9.6 also discovers video elements inside open shadow roots and generated player frames (`about:blank`, `blob:`, and origin-fallback frames). A real player that is temporarily CSS-hidden or still initializing remains eligible, while visible ready players continue to rank first.
 
 v2.9.5 no longer assumes the media request's reported frame is where the `<video>` lives. On warm-up or fallback, it enumerates the tab's frames, asks each injected helper whether it has a visible video, ranks matches by visible area, and targets the actual player. This covers players whose HLS request is initiated by the top page while their video element is nested in an iframe.
 

@@ -1,4 +1,4 @@
-# Any Video Downloader v2.9.5 Technical Audit
+# Any Video Downloader v2.9.6 Technical Audit
 
 ## Scope
 
@@ -54,6 +54,8 @@ When an HLS request originates in an embedded player, its Chrome frame ID is ret
 On an explicit HLS Download action, a lazy player may be warmed for 3.5 seconds before the fetch. The warm-up is muted, bounded to one identified frame, restores the previous paused/audio state, and is followed by a network/declarative rescan. General Scan remains non-playing.
 
 Frame selection does not trust the request frame alone. The service worker enumerates the current tab's frames, probes each extension-injected helper, and ranks visible video elements by area before warm-up or capture. The UI displays its loaded version so users can verify that an unpacked extension was actually reloaded.
+
+Player probing includes open shadow roots and origin-derived generated frames. Visibility is a ranking preference rather than an exclusion rule, allowing lazy players whose media element begins hidden or at zero size to warm up.
 
 ### DASH
 

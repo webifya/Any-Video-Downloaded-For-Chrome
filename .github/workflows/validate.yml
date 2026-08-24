@@ -37,7 +37,7 @@ jobs:
           const fs = require('fs');
           const m = require('./manifest.json');
           if (m.manifest_version !== 3) throw new Error('Manifest must be v3');
-          if (m.version !== '2.9.5') throw new Error('Unexpected release version');
+          if (m.version !== '2.9.6') throw new Error('Unexpected release version');
           if (!m.permissions.includes('declarativeNetRequestWithHostAccess')) throw new Error('Missing signed-CDN request-context permission');
           if (!m.permissions.includes('storage')) throw new Error('Missing MV3 session-persistence permission');
           if (!m.permissions.includes('webNavigation')) throw new Error('Missing cross-frame discovery permission');
@@ -45,6 +45,7 @@ jobs:
           const mainScripts = m.content_scripts?.[0]?.js || [];
           for (const f of ['title-helper.js','content.js','hls-page-capture.js']) if (!mainScripts.includes(f)) throw new Error(`Main page script not wired: ${f}`);
           if (!m.content_scripts?.[0]?.all_frames) throw new Error('Embedded-player capture helper must run in all frames');
+          if (!m.content_scripts?.[0]?.match_about_blank || !m.content_scripts?.[0]?.match_origin_as_fallback) throw new Error('Generated player-frame injection is incomplete');
           const hlsCapture = fs.readFileSync('hls-page-capture.js','utf8');
           if (!hlsCapture.includes('isYouTube') || !hlsCapture.includes('captureDecodedPageVideo')) throw new Error('YouTube decoded-page capture fallback is missing');
           const html = fs.readFileSync('offscreen.html','utf8');

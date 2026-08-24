@@ -20,6 +20,8 @@ assert.equal(manifest.content_scripts.some(x => x.world === 'MAIN' && x.js?.incl
 assert.equal(manifest.permissions.includes('storage'), true, 'session persistence requires the storage permission');
 assert.equal(manifest.permissions.includes('webNavigation'), true, 'cross-frame player discovery requires webNavigation');
 assert.equal(manifest.content_scripts[0].all_frames, true, 'capture fallback must be injected into embedded player frames');
+assert.equal(manifest.content_scripts[0].match_about_blank, true, 'about:blank player frames must receive the capture helper');
+assert.equal(manifest.content_scripts[0].match_origin_as_fallback, true, 'generated player frames must inherit matching from their creator');
 assert.doesNotMatch(title, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'title tracking must not observe high-frequency page class mutations');
 
 assert.match(youtube, /scheduleProbe/, 'YouTube probing should be debounced');
@@ -42,6 +44,8 @@ assert.doesNotMatch(capture, /window\.top\s*!==\s*window\.self\)\s*return/, 'cap
 assert.match(capture, /START_FRAME_VIDEO_CAPTURE[\s\S]*filenameBase/, 'player frames must accept titled capture requests');
 assert.match(capture, /START_FRAME_VIDEO_WARMUP[\s\S]*video\.muted=true[\s\S]*video\.play\(\)[\s\S]*if\(wasPaused\)video\.pause/, 'frame warm-up must be muted, bounded, and restore paused state');
 assert.match(capture, /PROBE_FRAME_VIDEO[\s\S]*visibleArea/, 'each injected frame must report whether it contains a visible video');
+assert.match(capture, /shadowRoot[\s\S]*querySelectorAll\('video'\)/, 'open shadow-root players must be discoverable');
+assert.doesNotMatch(capture, /\.filter\(visible\)/, 'an initializing or CSS-hidden real video must not be rejected outright');
 assert.match(content, /getManifest[\s\S]*Any Video Downloader\$\{EXT_VERSION/, 'panel must display the loaded extension version');
 assert.doesNotMatch(content, /triggerPlayers|\.play\(\)[\s\S]{0,100}Scanning/, 'media scanning must never start page playback');
 assert.doesNotMatch(content, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'media tracking must not observe high-frequency class mutations');

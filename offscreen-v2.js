@@ -414,8 +414,9 @@ const AVD = (() => {
       const blob = await hlsTrackBlob(info, msg.tabId, 'video', 3, 97);
       if (/mp2t/.test(blob.type)) {
         report(msg.tabId, 32, 'hls-transmux', 0, blob.size, 'Transmuxing MPEG-TS to MP4 without re-encoding…');
-        try{const mp4=await transmuxTransportStream(blob),filename=`${msg.filenameBase}.mp4`;saveBlob(mp4,filename);report(msg.tabId,100,'done',mp4.size,mp4.size,`Complete — ${filename}`);return{ok:true,message:`Downloaded ${filename}`};}
-        catch(error){return transcodeTransportStream(blob,msg.filenameBase,msg.tabId).catch(()=>{throw error;});}
+        const mp4=await transmuxTransportStream(blob);
+        report(msg.tabId,55,'hls-finalize',0,mp4.size,'Finalizing MP4 for desktop playback…');
+        return transcodeTransportStream(mp4,msg.filenameBase,msg.tabId);
       }
       const ext = '.mp4';
       saveBlob(blob, `${msg.filenameBase}${ext}`);
@@ -442,8 +443,9 @@ const AVD = (() => {
     }
     if (/mp2t/.test(video.type)) {
       report(msg.tabId,32,'hls-transmux',0,video.size,'Transmuxing MPEG-TS to MP4 without re-encoding…');
-      try{const mp4=await transmuxTransportStream(video),filename=`${msg.filenameBase}.mp4`;saveBlob(mp4,filename);report(msg.tabId,100,'done',mp4.size,mp4.size,`Complete — ${filename}`);return{ok:true,message:`Downloaded ${filename}`};}
-      catch(error){return transcodeTransportStream(video,msg.filenameBase,msg.tabId).catch(()=>{throw error;});}
+      const mp4=await transmuxTransportStream(video);
+      report(msg.tabId,55,'hls-finalize',0,mp4.size,'Finalizing MP4 for desktop playback…');
+      return transcodeTransportStream(mp4,msg.filenameBase,msg.tabId);
     }
     const ext = '.mp4';
     saveBlob(video, `${msg.filenameBase}${ext}`);

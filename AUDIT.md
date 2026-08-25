@@ -1,4 +1,4 @@
-# Any Video Downloader v3.0.1 Technical Audit
+# Any Video Downloader v3.0.2 Technical Audit
 
 ## Scope
 
@@ -40,6 +40,8 @@ The repeated DigitalMarketer failure proved that browser-native decoding could n
 | Page with an exposed capturable HTML video | Page-decoded recording only as a final compatibility fallback |
 
 The Apache-2.0 `mux.js` 6.3.0 browser build is vendored in the extension and loaded locally by the offscreen document. It performs no runtime code download. Real upstream H.264/AAC MPEG-TS and standalone ADTS AAC fixtures verify that output contains valid ISO BMFF `ftyp`, `moov`, `moof`, and `mdat` boxes before release.
+
+Those boxes form a streaming-oriented fragmented MP4. v3.0.2 no longer exposes that intermediate directly as the downloaded file: Chrome decodes and records it into its supported final MP4 container, or WebM when MP4 recording is unavailable. This addresses desktop players that showed a black frame even though Google Drive could transcode the same fragmented source.
 
 ## Major fixes
 

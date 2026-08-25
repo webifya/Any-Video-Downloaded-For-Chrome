@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.2 - 2026-08-26
+
+- Fixed downloaded HLS video showing a black screen in desktop players while working after Google Drive transcoded it.
+- Treats transmuxed fragmented MP4 as an internal streaming intermediate instead of saving it directly.
+- Finalizes the intermediate through Chrome's recorder into a normal MP4 when supported, otherwise a valid WebM.
+- Added a regression guard preventing raw fragmented MP4 from being saved as the final desktop file.
+
 ## 3.0.1 - 2026-08-26
 
 - Fixed the DigitalMarketer filename regression shown in the Loom recording: an active `Step 3: Objections & Rebuttals` lesson could still save as the course title `Buyers From Scratch`.

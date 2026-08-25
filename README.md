@@ -6,7 +6,9 @@
 
 ## Current version
 
-**v3.0.1 — type-routed downloads with corrected course lesson filenames**
+**v3.0.2 — desktop-playable HLS output and corrected lesson filenames**
+
+v3.0.2 uses the transmuxed fragmented MP4 only internally, then finalizes it through Chrome before saving. This fixes files that displayed correctly after Google Drive transcoding but showed a black screen in desktop players.
 
 v3.0.1 recognizes lower-level and ARIA lesson headings used by DigitalMarketer-style course layouts, so a visible title such as `Step 3: Objections & Rebuttals` is used instead of the course title `Buyers From Scratch`.
 

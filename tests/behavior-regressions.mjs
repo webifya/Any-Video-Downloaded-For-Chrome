@@ -23,6 +23,8 @@ assert.equal(manifest.content_scripts[0].all_frames, true, 'capture fallback mus
 assert.equal(manifest.content_scripts[0].match_about_blank, true, 'about:blank player frames must receive the capture helper');
 assert.equal(manifest.content_scripts[0].match_origin_as_fallback, true, 'generated player frames must inherit matching from their creator');
 assert.doesNotMatch(title, /attributeFilter:\s*\[[^\]]*['"]class['"]/, 'title tracking must not observe high-frequency page class mutations');
+assert.match(title, /h5,h6,\[role="heading"\]/, 'course titles rendered as lower-level or ARIA headings must participate in proximity scoring and SPA updates');
+assert.match(title, /relevant\s*=\s*['"][^'"]*h5,h6[^'"]*role=\\?"heading/, 'lower-level lesson-heading text changes must trigger a debounced title refresh');
 
 assert.match(youtube, /scheduleProbe/, 'YouTube probing should be debounced');
 assert.doesNotMatch(youtube, /setTimeout\(probe,\s*(?:300|900|1800|3200)/, 'YouTube must not run repeated probe bursts');

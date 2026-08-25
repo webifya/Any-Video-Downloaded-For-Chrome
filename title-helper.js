@@ -40,7 +40,7 @@
     const player = players[0];
     if (!player) return;
     const pr = player.getBoundingClientRect();
-    for (const el of document.querySelectorAll('h1,h2,h3,h4,[class*="lesson-title"],[class*="lesson_name"],[data-testid*="title"]')) {
+    for (const el of document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],[class*="lesson-title"],[class*="lesson_name"],[class*="lessonTitle"],[data-testid*="title"]')) {
       if (!visible(el) || el.id === ID) continue;
       const r = el.getBoundingClientRect();
       if (r.bottom > pr.top + 120) continue;
@@ -90,7 +90,7 @@
     }
 
     // Main content heading fallback.
-    for (const el of document.querySelectorAll('main h1,[role="main"] h1,article h1,main h2,[role="main"] h2')) {
+    for (const el of document.querySelectorAll('main h1,main h2,main h3,main h4,main h5,main h6,[role="main"] h1,[role="main"] h2,[role="main"] [role="heading"],article h1,article h2,[data-testid*="lesson-title"],[class*="lesson-title"],[class*="lessonTitle"]')) {
       if (visible(el) && el.id !== ID) add(out, el.textContent, 105, 'main-heading');
     }
 
@@ -144,7 +144,7 @@
     timer = setTimeout(update, delay);
   }
 
-  const relevant = 'video,iframe,h1,h2,h3,h4,[aria-current],[aria-selected],[aria-checked],[data-active],[data-selected],[data-state]';
+  const relevant = 'video,iframe,h1,h2,h3,h4,h5,h6,[role="heading"],[class*="lesson-title"],[class*="lesson_name"],[class*="lessonTitle"],[data-testid*="title"],[aria-current],[aria-selected],[aria-checked],[data-active],[data-selected],[data-state]';
   const observer = new MutationObserver(records => {
     if (records.some(r => r.type === 'attributes' || (r.type === 'childList' && (r.target?.matches?.(relevant) || [...r.addedNodes].some(n => n.nodeType === 1 && (n.matches?.(relevant) || n.querySelector?.(relevant))))))) schedule(180);
   });

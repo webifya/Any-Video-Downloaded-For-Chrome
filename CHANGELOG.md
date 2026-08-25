@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.1 - 2026-08-26
+
+- Fixed the DigitalMarketer filename regression shown in the Loom recording: an active `Step 3: Objections & Rebuttals` lesson could still save as the course title `Buyers From Scratch`.
+- Extends near-player lesson-title scoring and SPA mutation tracking to `h5`, `h6`, ARIA headings, and common lesson-title components.
+- Keeps title observation attribute-filtered and debounced; it does not restore page-wide class/text monitoring.
+
 ## 3.0.0 - 2026-08-25
 
 - Replaced the single universal HLS conversion assumption with type-routed direct, fMP4/CMAF, MPEG-TS, separate-track, DASH, and page-player processors.

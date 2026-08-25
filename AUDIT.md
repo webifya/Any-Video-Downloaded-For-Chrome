@@ -1,4 +1,4 @@
-# Any Video Downloader v3.0.0 Technical Audit
+# Any Video Downloader v3.0.1 Technical Audit
 
 ## Scope
 
@@ -62,6 +62,8 @@ Volatile range parameters are removed before extension-local fetch, while the or
 The current page/lesson/video signature is monitored with debounced navigation, DOM, History API and player events. A minimal main-world hook publishes `pushState`/`replaceState` navigation to the isolated title detector. A service-worker context key, including hash routes, clears old candidates exactly once. No recurring full-page scan is used.
 
 Course completion checkboxes are not considered current-lesson signals. The visible heading spatially nearest the player outranks course-level navigation, fixing the DigitalMarketer case where `Buyers From Scratch` was used instead of `What You'll Need`. The UI retains the processor's concrete completion/filename message rather than replacing it with a generic `Finished` state.
+
+The v3.0.1 review expanded this rule to `h5`, `h6`, ARIA headings, and common lesson-title components. Their SPA text changes are included in the same filtered, debounced observer, fixing the recorded case where `Step 3: Objections & Rebuttals` downloaded under the stale course title `Buyers From Scratch`.
 
 ### Separate video and audio
 

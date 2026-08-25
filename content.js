@@ -30,7 +30,7 @@
     for(const sel of active) for(const el of document.querySelectorAll(sel)){ if(!visible(el))continue; const t=meaningful(el.textContent); if(t&&t.length<=180)return t; }
     const crumbs=[...document.querySelectorAll('[aria-label*="breadcrumb" i] a,[aria-label*="breadcrumb" i] span,.breadcrumb a,.breadcrumb span,[class*="breadcrumb"] a,[class*="breadcrumb"] span')].filter(visible).map(el=>meaningful(el.textContent)).filter(Boolean);
     if(crumbs.length)return crumbs[crumbs.length-1];
-    return meaningful(textFrom(['main h1','[role="main"] h1','article h1','h1','main h2','[role="main"] h2']))||meaningful(meta('og:title'))||meaningful(document.title)||sanitize(location.hostname)||'Video';
+    return meaningful(textFrom(['main h1','main h2','main h3','main h4','main h5','main h6','[role="main"] [role="heading"]','[data-testid*="lesson-title"]','[class*="lesson-title"]','[class*="lessonTitle"]','article h1','h1','[role="main"] h2']))||meaningful(meta('og:title'))||meaningful(document.title)||sanitize(location.hostname)||'Video';
   }
 
   function nearbyTitle(video){ const own=meaningful(video.getAttribute('aria-label')||video.getAttribute('title')); if(own)return own; const c=video.closest('article,section,figure,[class*="video"],[class*="player"]'); return meaningful(c?.querySelector('h1,h2,h3,h4,h5,h6,[class*="title"]')?.textContent)||pageTitle(); }

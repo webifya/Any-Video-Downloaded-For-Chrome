@@ -6,7 +6,9 @@
 
 ## Current version
 
-**v3.0.0 — type-routed download architecture and local MPEG-TS transmuxing**
+**v3.0.1 — type-routed downloads with corrected course lesson filenames**
+
+v3.0.1 recognizes lower-level and ARIA lesson headings used by DigitalMarketer-style course layouts, so a visible title such as `Step 3: Objections & Rebuttals` is used instead of the course title `Buyers From Scratch`.
 
 v3.0.0 selects a processor based on the detected media: direct/ranged files, fMP4/CMAF HLS, MPEG-TS HLS, separate adaptive tracks, DASH, or an exposed page player. MPEG-TS H.264/AAC is now converted structurally to fragmented MP4 with a bundled local transmuxer before Chrome decoding is attempted. This removes the failing assumption that Chrome can load an assembled `.ts` Blob as a normal media element.
 
